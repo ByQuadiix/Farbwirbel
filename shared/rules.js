@@ -11,7 +11,7 @@ export const DEFAULT_SETTINGS = {
   theme: 'neon',        // neon | winter | garden
   handSize: 7,
   stacking: false,      // +2 auf +2, +4 auf +2/+4
-  sevenZero: false,     // 7 = Hand tauschen, 0 = alle Hände weiterreichen
+  zeroPass: false,      // 0 = alle Hände wandern einen Platz in Spielrichtung weiter
   jumpIn: false,        // identische Karte außerhalb des Zuges reinwerfen
   drawToMatch: false,   // so lange ziehen, bis eine Karte passt
   scoreLimit: 500,      // 0 = ohne Limit

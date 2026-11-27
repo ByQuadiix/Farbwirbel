@@ -70,7 +70,7 @@ export function rulesHtml(settings) {
         <section id="r-haus">
           <h3>Hausregeln</h3>
           <p class="rules-intro">Stellt der Host in der Lobby ein.</p>
-          ${entry([{ color: 'r', kind: '7' }, { color: 'b', kind: '0' }], '7 – 0', `<b>7:</b> Tausche deine Hand mit einem Spieler deiner Wahl. <b>0:</b> Alle Hände wandern in Spielrichtung weiter. ${status(settings, 'sevenZero')}`)}
+          ${entry([{ color: 'b', kind: '0' }], '0 – Hände weiterreichen', `Wer eine <b>0</b> legt, lässt alle Hände einen Platz in Spielrichtung weiterwandern. ${status(settings, 'zeroPass')}`)}
           ${entry([{ color: 'g', kind: 'draw2' }, { color: 'w', kind: 'wild4' }], 'Stapeln', `+2 auf +2, +4 auf +2 oder +4. Wer nicht stapeln kann, zieht alles. ${status(settings, 'stacking')}`)}
           ${entry([{ color: 'y', kind: '5' }, { color: 'y', kind: '5' }], 'Reinwerfen', `Eine <b>exakt gleiche</b> Karte (Farbe und Zahl/Art) darfst du jederzeit dazwischenwerfen – auch wenn du nicht dran bist. Danach geht es bei dir weiter. ${status(settings, 'jumpIn')}`)}
           ${entry([{ color: 'b', kind: '3' }], 'Ziehen bis passt', `Du ziehst so lange, bis eine Karte passt. ${status(settings, 'drawToMatch')}`)}

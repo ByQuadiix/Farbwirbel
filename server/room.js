@@ -260,11 +260,6 @@ export class Room {
     }
     if (!jumpIn && !canPlay(card, top, g.color, g.pending, this.settings)) fail('Diese Karte passt nicht.');
     if (isWild(card) && !COLORS.includes(opts.color)) fail('Bitte eine Farbe wählen.');
-    let swapTarget = null;
-    if (this.settings.sevenZero && card.kind === '7' && p.hand.length > 1) {
-      swapTarget = this.byId(opts.target);
-      if (!swapTarget || swapTarget === p) fail('Wähle einen Spieler zum Tauschen.');
-    }
 
     // --- Ausführen ---
     const prevColor = g.color;
@@ -295,11 +290,8 @@ export class Room {
       return this.endRound(p);
     }
 
-    if (swapTarget) {
-      [p.hand, swapTarget.hand] = [swapTarget.hand, p.hand];
-      for (const q of [p, swapTarget]) { q.called = false; q.vulnerable = false; }
-      this.ev({ type: 'swap', a: p.id, b: swapTarget.id });
-    } else if (this.settings.sevenZero && card.kind === '0') {
+    // Hausregel „0 – Hände weiterreichen“: alle Hände wandern einen Platz in Spielrichtung weiter
+    if (this.settings.zeroPass && card.kind === '0') {
       const hands = this.players.map((q) => q.hand);
       this.players.forEach((q, i) => { this.players[this.nextIndex(i)].hand = hands[i]; });
       for (const q of this.players) { q.called = false; q.vulnerable = false; }
@@ -844,7 +836,7 @@ function sanitizeSettings(cur, s) {
   const out = { ...cur };
   if (['neon', 'winter', 'garden'].includes(s.theme)) out.theme = s.theme;
   if (Number.isInteger(s.handSize) && s.handSize >= 3 && s.handSize <= 10) out.handSize = s.handSize;
-  for (const k of ['stacking', 'sevenZero', 'jumpIn', 'drawToMatch', 'acid']) if (typeof s[k] === 'boolean') out[k] = s[k];
+  for (const k of ['stacking', 'zeroPass', 'jumpIn', 'drawToMatch', 'acid']) if (typeof s[k] === 'boolean') out[k] = s[k];
   if ([0, 200, 300, 500].includes(s.scoreLimit)) out.scoreLimit = s.scoreLimit;
   if ([0, 15, 30, 60].includes(s.turnTime)) out.turnTime = s.turnTime;
   if (['easy', 'normal', 'hard'].includes(s.botLevel)) out.botLevel = s.botLevel;

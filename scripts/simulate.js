@@ -9,13 +9,13 @@ const variants = [
   {},
   { acid: false, doom: 0 },
   { doom: 15, chaos: 20 },
-  { doom: 10, chaos: 35, stacking: true, sevenZero: true },
+  { doom: 10, chaos: 35, stacking: true, zeroPass: true },
   { stacking: true },
-  { sevenZero: true },
+  { zeroPass: true },
   { jumpIn: true, drawToMatch: true },
-  { stacking: true, sevenZero: true, drawToMatch: true },
+  { stacking: true, zeroPass: true, drawToMatch: true },
   { chaos: 10 },
-  { chaos: 35, stacking: true, sevenZero: true },
+  { chaos: 35, stacking: true, zeroPass: true },
   { chaos: 20, jumpIn: true, drawToMatch: true },
 ];
 const effectsSeen = new Set();

@@ -161,7 +161,6 @@ function onCardClick(card) {
     return net.send({ t: 'play', cardId: card.id });
   }
   if (card.color === 'w') { state.pick = { type: 'color', card }; sfx('click'); return render(); }
-  if (v.settings.sevenZero && card.kind === '7' && v.hand.length > 1) { state.pick = { type: 'swap', card }; sfx('click'); return render(); }
   net.send({ t: 'play', cardId: card.id });
 }
 
@@ -513,7 +512,7 @@ function renderLobby(v) {
           <h3>Hausregeln</h3>
           ${toggle('acid', s.acid, 'Säure-Karten', 'Je eine pro Farbe: Wer z. B. rote Säure legt, wirft alle seine roten Karten mit ab.', isHost)}
           ${toggle('stacking', s.stacking, 'Stapeln', '+2 auf +2 und +4 auf +2/+4 – der Nächste zieht alles.', isHost)}
-          ${toggle('sevenZero', s.sevenZero, '7 – 0', '7: Hand mit jemandem tauschen. 0: alle Hände wandern weiter.', isHost)}
+          ${toggle('zeroPass', s.zeroPass, '0 – Hände weiterreichen', 'Wer eine 0 legt, lässt alle Hände einen Platz in Spielrichtung weiterwandern.', isHost)}
           ${toggle('jumpIn', s.jumpIn, 'Reinwerfen', 'Exakt gleiche Karte jederzeit dazwischenwerfen.', isHost)}
           ${toggle('drawToMatch', s.drawToMatch, 'Ziehen bis passt', 'So lange ziehen, bis eine Karte passt.', isHost)}
         </section>
@@ -631,7 +630,7 @@ function renderHud(v) {
     const pc = state.pick.card;
     const text = pc.kind === 'chaos' || pc.kind === 'doom'
       ? `<b>${pc.kind === 'doom' ? '☠ ' : ''}${esc(specialInfo(pc).name)}</b>: Klicke auf den Spieler, den es treffen soll.`
-      : 'Klicke auf den Spieler, mit dem du die Hand tauschen willst.';
+      : 'Klicke auf einen Spieler.';
     decision = `<div class="decision panel slim"><p>${text}</p><button class="btn ghost small" data-act="cancelPick">Abbrechen</button></div>`;
   }
   $('decision').innerHTML = decision;

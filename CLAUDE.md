@@ -178,11 +178,11 @@ Erwischt = +2. Gezogene passende Karte darf sofort gespielt werden (`awaiting {t
 
 **Säure** (1 pro Farbe): legt alle eigenen Karten dieser Farbe mit ab (unter die Säure, Säure bleibt oben).
 
-**Hausregeln** (Lobby-Schalter): `stacking`, `sevenZero`, `jumpIn`, `drawToMatch`, `acid`.
+**Hausregeln** (Lobby-Schalter): `stacking`, `zeroPass` (0 = Hände weiterreichen; den früheren 7er-Handtausch gibt es nicht mehr), `jumpIn`, `drawToMatch`, `acid`.
 
 **Punkte:** Zahl = Wert · Aktion/Säure = 20 · Joker/Chaos = 50 · DOOM = 100. Punkteziel 0/200/300/500.
 
-**Einstellungen** (`DEFAULT_SETTINGS`): `theme (neon|winter|garden), handSize, stacking, sevenZero, jumpIn, drawToMatch,
+**Einstellungen** (`DEFAULT_SETTINGS`): `theme (neon|winter|garden), handSize, stacking, zeroPass, jumpIn, drawToMatch,
 scoreLimit, turnTime (0/15/30/60), botLevel (easy|normal|hard), chaos (0/5/10/20/35 %), acid (bool), doom (0/1/3 %)`.
 Validierung in `sanitizeSettings()` (room.js) – neue Einstellungen dort UND in `DEFAULT_SETTINGS` UND in der Lobby (main.js `renderLobby`) eintragen.
 
@@ -224,8 +224,7 @@ erzeugt** (`room.hellCards(n)`, IDs ab 2 000 000) und kommen visuell aus dem **H
 ### `main.js` (größte Datei)
 - `state` (view, pick, debug, halluNames …), `render()` → `renderStart / renderLobby / renderHud / renderModal / renderDebug`.
 - **Eingaben:** Ein Click-Handler mit `data-act`-Attributen (Event-Delegation auf `#ui`). Karten-Klicks kommen aus
-  `board.handlers.onCardClick` → `onCardClick()` entscheidet: Farbwahl (`pick.type 'color'`), Zielwahl (`'swap'`, auch
-  für Chaos/DOOM mit Ziel), Richtungschaos-Dialog (`'dir'`).
+  `board.handlers.onCardClick` → `onCardClick()` entscheidet: Farbwahl (`pick.type 'color'`), Zielwahl (`'swap'`, für Chaos/DOOM mit Ziel), Richtungschaos-Dialog (`'dir'`).
 - **Effekte:** `handleEvents()` mappt Server-Events auf Sounds, Pop-Texte (`pop()`), Toasts, Konfetti, `doomAlert()`
   (bildschirmfüllende DOOM-Warnung + Screen-Shake).
 - **Halluzination:** wenn `me.hallu > 0`: Quatsch-Namen (`SILLY_NAMES`, eindeutig pro Gegner), Quatsch-Zahlen/Avatare
@@ -337,6 +336,8 @@ Karten in `validDebugCard()` (index.js). Lokal: `$env:FW_DEBUG='1'; npm start`. 
 9. Docker-Container lokal gebaut und getestet, Image als `.tar.gz` exportiert.
 10. Projektübergabe: CLAUDE.md, Git-Repo auf GitHub (zuerst „3D-Uno“, vom Nutzer umbenannt in „Farbwirbel“).
 11. Kartenauswahl bei großen Händen überarbeitet (Lupe, spielbare Karten vorne, Auswahl nach Position, Tastatur/Mausrad/Touch).
+12. Kartenanimationen beschleunigt (feste Gesamtdauer, Neuladen ohne Austeil-Animation).
+13. Hausregel 7 (Hand tauschen) **entfernt** auf Wunsch des Nutzers; 0 (Hände weiterreichen) bleibt als `zeroPass`.
 
 ## 14. Mögliche nächste Schritte (nicht beauftragt)
 - Hochformat/Handy weiter optimieren (Sitzplätze eng bei 5–6 Spielern).

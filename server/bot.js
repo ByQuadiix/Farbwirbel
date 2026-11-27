@@ -68,10 +68,6 @@ export function botDecide(room, bot, level) {
       return a;
     }
     if (isWild(card)) a.color = level === 'easy' && Math.random() < 0.4 ? COLORS[Math.floor(Math.random() * 4)] : bestColor(hand.filter((c) => c !== card));
-    if (s.sevenZero && card.kind === '7') {
-      const target = others.reduce((m, p) => (p.hand.length < m.hand.length ? p : m), others[0]);
-      a.target = target.id;
-    }
     return a;
   };
 
@@ -115,8 +111,10 @@ export function botDecide(room, bot, level) {
     if (!isWild(c)) v += colorCount(c.color) * (level === 'hard' ? 1.5 : 1);
     // Farbwechsel weg von Farben, die wir kaum haben
     if (!isWild(c) && c.color !== g.color) v += colorCount(c.color) - colorCount(g.color);
-    if (level === 'hard' && c.kind === '7' && s.sevenZero) {
-      v += hand.length - minOpp > 2 ? 25 : -5;
+    if (level === 'hard' && c.kind === '0' && s.zeroPass) {
+      // Wir bekommen die Hand des Spielers vor uns – lohnt sich, wenn die kleiner ist als unsere
+      const prev = room.players[room.nextIndex(idx, -1)];
+      v += hand.length - 1 - prev.hand.length > 1 ? 20 : -5;
     }
     return v + Math.random() * (level === 'hard' ? 0.5 : 3);
   };
