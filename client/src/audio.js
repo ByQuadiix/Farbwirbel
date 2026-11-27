@@ -76,6 +76,34 @@ const SFX = {
     tone(110, 0.6, { type: 'sawtooth', gain: 0.1, at: 0.3, slide: 0.5 });
     noise(0.4, { freq: 900, q: 3, gain: 0.25, at: 0.3 });
   },
+  tick() { tone(1400, 0.04, { type: 'square', gain: 0.06 }); tone(900, 0.04, { type: 'square', gain: 0.05, at: 0.18 }); },
+  tickFast() { for (let i = 0; i < 4; i++) tone(1600, 0.035, { type: 'square', gain: 0.07, at: i * 0.09 }); },
+  boom() {
+    noise(1.2, { freq: 90, q: 0.5, gain: 0.9, type: 'lowpass' });
+    tone(55, 0.9, { type: 'sawtooth', gain: 0.25, slide: 0.4 });
+    noise(0.5, { freq: 2500, q: 0.6, gain: 0.25, type: 'highpass', at: 0.05 });
+  },
+  mirror() {
+    [1568, 2093, 2637, 3136].forEach((f, i) => tone(f, 0.25, { type: 'sine', gain: 0.07, at: i * 0.04 }));
+    tone(600, 0.35, { type: 'triangle', gain: 0.1, slide: 2.5 });
+  },
+  steal() { noise(0.15, { freq: 3000, gain: 0.3, type: 'bandpass' }); tone(700, 0.12, { type: 'triangle', gain: 0.1, at: 0.08, slide: 1.6 }); },
+  freeze() {
+    [2093, 2349, 2637, 3136, 3520].forEach((f, i) => tone(f, 0.4, { type: 'sine', gain: 0.05, at: i * 0.05 }));
+    noise(0.5, { freq: 7000, q: 0.5, gain: 0.12, type: 'highpass' });
+  },
+  xray() { tone(300, 0.5, { type: 'sine', gain: 0.1, slide: 3 }); tone(1200, 0.2, { type: 'square', gain: 0.03, at: 0.35 }); },
+  meteor() {
+    noise(1.0, { freq: 400, q: 1, gain: 0.4, type: 'bandpass' });
+    tone(900, 1.0, { type: 'sawtooth', gain: 0.05, slide: 0.15 });
+    noise(0.9, { freq: 100, q: 0.5, gain: 0.7, type: 'lowpass', at: 0.9 });
+  },
+  wheel() { for (let i = 0; i < 18; i++) tone(1200, 0.025, { type: 'square', gain: 0.05, at: i * (0.05 + i * 0.006) }); },
+  blackout() {
+    tone(220, 0.8, { type: 'sawtooth', gain: 0.12, slide: 0.2 });
+    noise(0.15, { freq: 3000, gain: 0.3, at: 0.05 });
+  },
+  rain() { for (let i = 0; i < 4; i++) noise(0.6, { freq: 5000, q: 0.4, gain: 0.12, type: 'highpass', at: i * 0.3 }); },
   acid() {
     noise(0.9, { freq: 4500, q: 0.5, gain: 0.35, type: 'highpass' }); // Zischen
     for (let i = 0; i < 9; i++) tone(300 + Math.random() * 500, 0.07, { type: 'sine', gain: 0.12, at: 0.05 + i * 0.07, slide: 1.8 }); // Blubbern

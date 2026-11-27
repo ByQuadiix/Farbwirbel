@@ -2,7 +2,9 @@
 // Arbeitet "diff-basiert": jeder Server-Stand wird mit den vorhandenen Meshes abgeglichen,
 // Karten fliegen weich (exponentielle Glättung) zu ihren Zielpositionen.
 import * as THREE from 'three';
-import { createCardMesh, setCardFace, disposeCardMesh, sortHand, backTexture, shade, CARD_W, CARD_H } from './cards.js';
+import { createCardMesh, setCardFace, disposeCardMesh, sortHand, backTexture, faceTexture, shade, CARD_W, CARD_H } from './cards.js';
+
+const TINTS = { none: [1, 1, 1], frost: [0.62, 0.82, 1.15], curse: [1.15, 0.42, 0.42], wet: [0.78, 0.9, 1.12] };
 import { COLOR_HEX } from '../../shared/rules.js';
 import { ChaosFX } from './particles.js';
 
@@ -397,7 +399,16 @@ export class Board {
     // DOOM-Effekte öffnen das Höllenportal in der Tischmitte
     const doomEv = events.find((e) => e.type === 'doom');
     if (doomEv) this.openPortal(doomEv.effect === 'hallu' ? 2.5 : 6);
-    const fromPortal = !!doomEv && (doomEv.effect === 'plus100' || doomEv.effect === 'tornado');
+    const fromPortal = (!!doomEv && (doomEv.effect === 'plus100' || doomEv.effect === 'tornado'))
+      || events.some((e) => e.type === 'draw' && e.hell);
+    // Dieb: gestohlene Karte fliegt vom Opfer zum Dieb
+    const stealTo = new Map(); // Empfänger → Position des Opfers
+    const stealFrom = new Map(); // Opfer → Position des Diebs
+    for (const e of events) {
+      if (e.type !== 'steal') continue;
+      stealTo.set(e.to, this.seatPos(e.from));
+      stealFrom.set(e.from, this.seatPos(e.to));
+    }
     for (const e of events) {
       if (e.type !== 'play' || !e.chaos) continue;
       if (e.player === view.me) {
@@ -411,11 +422,14 @@ export class Board {
     // Bei Handtausch & Co. kommen neue Karten aus der Tischmitte statt vom Stapel
     const reshuffled = events.some((e) => e.type === 'swap' || e.type === 'rotate'
       || (e.type === 'chaos' && ['shuffleHands', 'swapHand', 'gift'].includes(e.effect)));
-    const source = () => (fromPortal
-      ? this.portalPose()
-      : reshuffled
-        ? { pos: new THREE.Vector3(0, 1.6, 0), quat: new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI / 2, 0, Math.PI, 'YXZ')) }
-        : this.pileTopWorld());
+    const faceDown = () => new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI / 2, 0, Math.PI, 'YXZ'));
+    const source = (forId) => (stealTo.has(forId)
+      ? { pos: stealTo.get(forId).clone(), quat: faceDown() }
+      : fromPortal
+        ? this.portalPose()
+        : reshuffled
+          ? { pos: new THREE.Vector3(0, 1.6, 0), quat: faceDown() }
+          : this.pileTopWorld());
 
     const tornadoEv = events.find((e) => (e.type === 'chaos' || e.type === 'doom') && e.effect === 'tornado');
     if (tornadoEv) this.startTornado(view, others, now, tornadoEv.type === 'doom');
@@ -432,7 +446,7 @@ export class Board {
       this.hand.delete(id);
       const partner = swap?.type === 'swap' ? (swap.a === view.me ? swap.b : swap.a) : null;
       const seat = this.seats.get(partner);
-      this.flyAway(m, seat ? seat.group.position.clone().setY(1) : undefined);
+      this.flyAway(m, stealFrom.get(view.me) ?? (seat ? seat.group.position.clone().setY(1) : undefined));
     }
     const sorted = sortHand(view.hand);
     const newCount = sorted.filter((c) => !this.hand.has(c.id)).length;
@@ -440,7 +454,7 @@ export class Board {
     let j = 0;
     for (const c of sorted) {
       if (this.hand.has(c.id)) continue;
-      const p = source();
+      const p = source(view.me);
       const m = this.spawn(c, p.pos, p.quat, this.handGroup);
       m.userData.speed = fromPortal ? 7 : 9;
       m.userData.delay = resync ? 0 : realDeal ? j * nSeats * dealStep : fromPortal ? 0.6 + j * step(newCount, 0.03, 1.2) : j * drawStep;
@@ -460,7 +474,7 @@ export class Board {
       while (seat.meshes.length < want) {
         let m;
         if (grew || dealt) {
-          const pp = source();
+          const pp = source(p.id);
           m = this.spawn(null, pp.pos, pp.quat, seat.group);
           m.userData.delay = resync ? 0 : realDeal ? (k * nSeats + seatOrder.get(p.id)) * dealStep : fromPortal ? 0.6 + k * oppStep : k * oppStep;
         } else {
@@ -471,7 +485,7 @@ export class Board {
         seat.meshes.push(m);
         k++;
       }
-      while (seat.meshes.length > want) this.flyAway(seat.meshes.pop(), swap ? undefined : seat.group.position.clone().setY(0.8));
+      while (seat.meshes.length > want) this.flyAway(seat.meshes.pop(), stealFrom.get(p.id) ?? (swap ? undefined : seat.group.position.clone().setY(0.8)));
       seat.lastCount = p.count;
       this.layoutSeat(seat);
     }
@@ -493,6 +507,10 @@ export class Board {
     // --- Halluzinationen ---
     const me = view.players.find((p) => p.id === view.me);
     this.applyHallu(view.phase === 'playing' && (me?.hallu ?? 0) > 0);
+
+    // --- Effekte der neuen Karten & Ereignisse (Bombe, Meteore, Spiegel, Eis, Regen …) ---
+    this.bombState = g.bomb;
+    this.handleFx(view, events, now);
 
     // aktiver Spieler
     const actor = g.actorId;
@@ -645,6 +663,161 @@ export class Board {
     for (const mat of [u.front.material, u.back.material]) {
       mat.emissive.copy(kind === 'doom' ? DOOM_GLOW : kind ? CHAOS_GLOW : new THREE.Color(0));
       mat.emissiveIntensity = 0;
+    }
+  }
+
+  // ---------- Neue Effekte: Bombe, Meteore, Spiegel, Eis, Regen, Stromausfall ----------
+
+  /** Weltposition eines Spielers (eigener Platz unten in der Mitte). */
+  seatPos(id) {
+    if (id === this.view?.me) return new THREE.Vector3(0, 0.8, 4.3);
+    const seat = this.seats.get(id);
+    return seat ? seat.group.position.clone().setY(0.8) : new THREE.Vector3(0, 1, 0);
+  }
+
+  handleFx(view, events, now) {
+    for (const e of events) {
+      switch (e.type) {
+        case 'bombBoom': {
+          const pos = this.bomb?.visible ? this.bomb.position.clone() : this.seatPos(e.player);
+          this.fx.burst(pos, 1.8, 'doom');
+          this.fx.burst(pos, 1.2, 'chaos');
+          if (this.bomb) this.bomb.visible = false;
+          this.handlers.onShake?.();
+          break;
+        }
+        case 'doom':
+          if (e.effect === 'meteor') {
+            e.hits.forEach((h, i) => this.spawnMeteor(this.seatPos(h.id), now + 0.5 + i * 0.35));
+          }
+          break;
+        case 'mirror':
+          this.fx.burst(this.seatPos(e.by), 1.2, 'mirror');
+          this.fx.burst(this.seatPos(e.to), 0.8, 'mirror');
+          break;
+        case 'chaos':
+          if (e.effect === 'freeze') this.fx.burst(new THREE.Vector3(0, 0.6, 0), 1.4, 'frost');
+          if (e.effect === 'thief') this.fx.burst(this.seatPos(e.target), 0.7, 'chaos');
+          break;
+        case 'iceSlide':
+          this.fx.burst(new THREE.Vector3(0, 0.3, 0), 1.0, 'frost');
+          this.pulse = 1;
+          break;
+        case 'thaw':
+          this.fx.burst(new THREE.Vector3(0, 0.6, 0), 0.8, 'frost');
+          break;
+        case 'tableEvent':
+          if (e.kind === 'rain') this.rainUntil = now + 7;
+          if (e.kind === 'ice') this.fx.burst(new THREE.Vector3(0, 0.6, 0), 1.2, 'frost');
+          break;
+        case 'pactDoom':
+          this.openPortal(3);
+          break;
+      }
+    }
+  }
+
+  setBlackout(seconds) {
+    this.blackoutUntil = performance.now() / 1000 + seconds;
+    this.layoutHand();
+  }
+
+  isBlackout() { return (this.blackoutUntil ?? 0) > performance.now() / 1000; }
+
+  // Zeitbombe: schwarze Kugel mit Lunte, schwebt über dem Spieler, der sie gerade hat
+  buildBomb() {
+    const g = (this.bomb = new THREE.Group());
+    const body = new THREE.Mesh(new THREE.SphereGeometry(0.34, 24, 18), new THREE.MeshStandardMaterial({ color: 0x141414, roughness: 0.3, metalness: 0.4, emissive: 0xff2200, emissiveIntensity: 0 }));
+    body.castShadow = true;
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.13, 0.12, 12), new THREE.MeshStandardMaterial({ color: 0x555555, metalness: 0.6, roughness: 0.4 }));
+    cap.position.y = 0.36;
+    const fuse = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.3, 6), new THREE.MeshStandardMaterial({ color: 0xc9a46a, roughness: 0.9 }));
+    fuse.position.set(0.06, 0.52, 0);
+    fuse.rotation.z = -0.4;
+    g.add(body, cap, fuse);
+    g.userData = { body, tip: new THREE.Vector3(0.12, 0.66, 0), emitAcc: 0 };
+    g.visible = false;
+    this.scene.add(g);
+  }
+
+  updateBomb(dt, t) {
+    const b = this.bombState;
+    if (!b || this.view?.phase !== 'playing') { if (this.bomb) this.bomb.visible = false; return; }
+    if (!this.bomb) this.buildBomb();
+    const target = b.holder ? this.seatPos(b.holder).add(new THREE.Vector3(0, 0.9, 0)) : new THREE.Vector3(0, 1.4, 0);
+    if (b.holder && b.holder !== this.view.me) target.multiplyScalar(0.82).setY(1.7); // etwas zur Tischmitte hin
+    if (!this.bomb.visible) { this.bomb.position.copy(target); this.bomb.visible = true; }
+    this.bomb.position.lerp(target, 1 - Math.exp(-dt * 4));
+    this.bomb.position.y += Math.sin(t * 5) * 0.04;
+    this.bomb.rotation.y += dt * 1.5;
+    const speed = b.danger ? 16 : 6;
+    this.bomb.userData.body.material.emissiveIntensity = (Math.sin(t * speed) * 0.5 + 0.5) * (b.danger ? 1.2 : 0.4);
+    this.bomb.scale.setScalar(1 + (b.power > 10 ? 0.25 : 0) + (b.danger ? Math.sin(t * speed) * 0.05 : 0));
+    // Funken an der Lunte
+    const u = this.bomb.userData;
+    u.emitAcc += dt;
+    while (u.emitAcc > 0.03) {
+      u.emitAcc -= 0.03;
+      const tip = this.bomb.localToWorld(u.tip.clone());
+      this.fx.sparks.emit({
+        x: tip.x, y: tip.y, z: tip.z, vx: (Math.random() - 0.5) * 1.5, vy: Math.random() * 1.8, vz: (Math.random() - 0.5) * 1.5,
+        life: 0.3 + Math.random() * 0.3, s0: 0.08, s1: 0.01, a: 1, color: new THREE.Color(Math.random() < 0.5 ? '#ffdd55' : '#ff7a1a'), drag: 0.95,
+      });
+    }
+  }
+
+  // Meteore: glühende Brocken fallen vom Himmel auf die Plätze der Getroffenen
+  spawnMeteor(target, startAt) {
+    const mesh = new THREE.Mesh(new THREE.IcosahedronGeometry(0.42, 1), new THREE.MeshStandardMaterial({ color: 0x3a0a00, emissive: 0xff4a00, emissiveIntensity: 2.2, flatShading: true, roughness: 0.8 }));
+    const from = target.clone().add(new THREE.Vector3((Math.random() - 0.5) * 6, 14, -9));
+    mesh.position.copy(from);
+    mesh.visible = false;
+    this.scene.add(mesh);
+    (this.meteors ??= []).push({ mesh, from, to: target.clone().setY(0.5), startAt, dur: 0.9 });
+  }
+
+  updateMeteors(dt, now) {
+    if (!this.meteors?.length) return;
+    this.meteors = this.meteors.filter((m) => {
+      if (now < m.startAt) return true;
+      const p = Math.min(1, (now - m.startAt) / m.dur);
+      const e = p * p; // beschleunigt nach unten
+      m.mesh.visible = true;
+      m.mesh.position.lerpVectors(m.from, m.to, e);
+      m.mesh.rotation.x += dt * 6;
+      m.mesh.rotation.y += dt * 4;
+      this.fx.meteorTrail(m.mesh.position, dt);
+      if (p >= 1) {
+        this.fx.burst(m.to, 1.6, 'doom');
+        this.handlers.onShake?.();
+        m.mesh.removeFromParent();
+        m.mesh.geometry.dispose();
+        m.mesh.material.dispose();
+        return false;
+      }
+      return true;
+    });
+  }
+
+  /** Kartentönung je nach Zustand: Eiszeit (frostig blau), Fluch (rot), Regen (nass glänzend). */
+  tintFor(card) {
+    if (!card) return null;
+    const g = this.view?.game;
+    const me = this.view?.players.find((p) => p.id === this.view.me);
+    if (g?.frozen && card.color === g.frozen.color) return 'frost';
+    if (me?.curse && ['r', 'y', 'g', 'b', 'w'].includes(card.color) && card.color !== me.curse.color) return 'curse';
+    if (g?.wet && card.color === g.wet) return 'wet';
+    return null;
+  }
+
+  updateLights(dt) {
+    const target = this.isBlackout() ? 0.12 : 1;
+    this.lightF = (this.lightF ?? 1) + (target - (this.lightF ?? 1)) * Math.min(1, dt * (target < 1 ? 8 : 2));
+    const flicker = this.isBlackout() && Math.random() < 0.04 ? 2.5 : 1; // kurzes Aufflackern
+    const f = Math.min(1, this.lightF * flicker);
+    if (this.stage.baseHemi != null) {
+      this.stage.hemi.intensity = this.stage.baseHemi * f;
+      this.stage.sun.intensity = this.stage.baseSun * f;
     }
   }
 
@@ -868,7 +1041,8 @@ export class Board {
     this.handGroup.position.set(0, -h / 2 + CARD_H * 0.5 * scale + 0.1, -d);
     const n = this.handOrder.length;
     const maxW = (w * 0.7) / scale - CARD_W; // rechts Platz für die Aktions-Buttons
-    const highlight = this.myTurn || this.playable.size > 0;
+    // Stromausfall: keine Hervorhebung – man spielt blind
+    const highlight = !this.isBlackout() && (this.myTurn || this.playable.size > 0);
     const split = highlight && n > 12 && this.playable.size > 0 && this.playable.size < n;
     const front = split ? this.handOrder.filter((id) => this.playable.has(id)) : this.handOrder;
     const back = split ? this.handOrder.filter((id) => !this.playable.has(id)) : [];
@@ -913,6 +1087,7 @@ export class Board {
       if (lift && highlight && playable) yy += 0.16;
       if (highlight && !playable) yy -= 0.08;
       if (hov) { yy += 0.32 * rs; zz = 1.4; } // ausgewählte Karte ganz nach vorn
+      m.userData.tint = this.tintFor(m.userData.card);
       m.userData.tp.set(x, yy, zz);
       m.userData.tq.setFromEuler(new THREE.Euler(0, 0, -x * 0.035));
       m.userData.ts = rs * (hov ? 1.1 : 1);
@@ -1102,9 +1277,19 @@ export class Board {
         u.shake -= dt;
         m.position.x += Math.sin(t * 60) * 0.03 * (u.shake / 0.4);
       }
-      if (Math.abs(u.curDim - u.dim) > 0.001) {
-        u.curDim += (u.dim - u.curDim) * Math.min(1, dt * 10);
-        u.front.material.color.setScalar(u.curDim);
+      if (Math.abs(u.curDim - u.dim) > 0.001) u.curDim += (u.dim - u.curDim) * Math.min(1, dt * 10);
+      // Helligkeit × Tönung (Eiszeit / Fluch / Regen)
+      const tint = TINTS[u.tint] ?? TINTS.none;
+      const wob = u.tint === 'wet' ? 0.06 * Math.sin(t * 3 + m.id) : 0;
+      u.front.material.color.setRGB(u.curDim * tint[0], u.curDim * (tint[1] + wob), u.curDim * tint[2]);
+      // Stromausfall: eigene Karten verdeckt
+      if (u.card && m.parent === this.handGroup) {
+        const hidden = this.isBlackout();
+        if (u.faceHidden !== hidden) {
+          u.faceHidden = hidden;
+          u.front.material.map = hidden ? backTexture() : faceTexture(u.card);
+          u.front.material.needsUpdate = true;
+        }
       }
       if (u.chaosMark && m.visible) {
         const kind = u.chaosMark;
@@ -1123,6 +1308,12 @@ export class Board {
     }
     if (this.tornadoUntil > now) this.fx.tornadoDust(dt, 1, this.tornadoKind);
     this.updatePortal(dt, t, now);
+    this.updateBomb(dt, t);
+    this.updateMeteors(dt, now);
+    this.updateLights(dt);
+    if ((this.rainUntil ?? 0) > now) this.fx.rain(dt, 1);
+    if (this.blackoutWas && !this.isBlackout()) this.layoutHand(); // Hervorhebung zurück
+    this.blackoutWas = this.isBlackout();
     this.updateFlyingSilly(now);
     this.updateHallu(t);
     this.fx.update(dt, this.stage.renderer, this.camera);

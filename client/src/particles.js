@@ -114,7 +114,12 @@ const DOOM_SMOKE = ['#1a0000', '#3a0500', '#5c0a00', '#8a1200', '#b31a00', '#2a0
 const EMBERS = ['#ffdd55', '#ffa21a', '#ff5a1a', '#ff2a00', '#fff2b0'].map((c) => new THREE.Color(c));
 const DOOM_GLOW = ['#ff2a00', '#ff6a1a', '#c40a00'].map((c) => new THREE.Color(c));
 
+const MIRROR_COLS = ['#ffffff', '#d8f3ff', '#9fe8ff', '#c9d6ff', '#fff6c8'].map((c) => new THREE.Color(c));
+const FROST_COLS = ['#ffffff', '#e6f7ff', '#b8e8ff', '#8fd6ff'].map((c) => new THREE.Color(c));
+
 const PAL = {
+  mirror: { smoke: MIRROR_COLS, spark: MIRROR_COLS, glow: [new THREE.Color('#9fe8ff'), new THREE.Color('#ffffff')], rate: 0.03, lift: 1, smokeSize: 0.8, smokeA: [0.3, 0.5], sparkVy: [0.8, 2], sparkSize: 1.2, glowChance: 0.6, glowA: 0.5, flash: new THREE.Color('#bff2ff') },
+  frost: { smoke: FROST_COLS, spark: FROST_COLS, glow: [new THREE.Color('#bfeaff')], rate: 0.04, lift: 0.6, smokeSize: 0.9, smokeA: [0.3, 0.5], sparkVy: [0.2, 0.8], sparkSize: 1, glowChance: 0.4, glowA: 0.35, flash: new THREE.Color('#d9f4ff') },
   chaos: { smoke: SMOKE_COLS, spark: SPARK_COLS, glow: GLOW_COLS, rate: 0.035, lift: 1, smokeSize: 1, smokeA: [0.55, 0.8], sparkVy: [0.5, 1.3], sparkSize: 1, glowChance: 0.5, glowA: 0.4, flash: new THREE.Color('#c04dff') },
   doom: { smoke: DOOM_SMOKE, spark: EMBERS, glow: DOOM_GLOW, rate: 0.02, lift: 1.4, smokeSize: 1.3, smokeA: [0.65, 0.9], sparkVy: [1.2, 2.8], sparkSize: 1.3, glowChance: 0.7, glowA: 0.55, flash: new THREE.Color('#ff2a00') },
 };
@@ -191,6 +196,37 @@ export class ChaosFX {
       });
     }
     this.glow.emit({ x: pos.x, y: pos.y, z: pos.z, vx: 0, vy: 0, vz: 0, life: 0.7 * big, s0: 1.5 * scale, s1: 4 * scale * big, a: 0.7, color: P.flash, drag: 1 });
+  }
+
+  /** Regen über dem Tisch (pro Frame aufrufen). */
+  rain(dt, strength = 1) {
+    const n = Math.ceil(dt * 140 * strength);
+    const col = [new THREE.Color('#bfe6ff'), new THREE.Color('#e8f6ff'), new THREE.Color('#8fc8ff')];
+    for (let i = 0; i < n; i++) {
+      this.sparks.emit({
+        x: rnd(-9, 9), y: rnd(7, 10), z: rnd(-6, 5),
+        vx: -0.6, vy: -rnd(11, 15), vz: 0.3,
+        life: rnd(0.55, 0.75), s0: rnd(0.05, 0.09), s1: 0.04, a: 0.8, color: pick(col), drag: 1,
+      });
+    }
+  }
+
+  /** Feuerschweif eines Meteors an Position `pos`. */
+  meteorTrail(pos, dt) {
+    const n = Math.ceil(dt * 120);
+    for (let i = 0; i < n; i++) {
+      this.sparks.emit({
+        x: pos.x + rnd(-0.2, 0.2), y: pos.y + rnd(-0.2, 0.2), z: pos.z + rnd(-0.2, 0.2),
+        vx: rnd(-0.5, 0.5), vy: rnd(0, 1.5), vz: rnd(-0.5, 0.5),
+        life: rnd(0.3, 0.7), s0: rnd(0.15, 0.3), s1: 0.03, a: 1, color: pick(PAL.doom.spark), drag: 0.95,
+      });
+      if (Math.random() < 0.5) {
+        this.smoke.emit({
+          x: pos.x, y: pos.y, z: pos.z, vx: rnd(-0.3, 0.3), vy: rnd(0.2, 0.8), vz: rnd(-0.3, 0.3),
+          life: rnd(0.8, 1.4), s0: 0.4, s1: rnd(1.2, 2), a: rnd(0.45, 0.7), color: pick(PAL.doom.smoke), rise: 0.2, drag: 0.97,
+        });
+      }
+    }
   }
 
   /** Feuer aus dem Höllenportal (pro Frame aufrufen, solange es offen ist). */

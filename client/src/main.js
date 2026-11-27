@@ -9,7 +9,10 @@ import { Net, store } from './net.js';
 import { sfx, isMuted, setMuted } from './audio.js';
 import { initCards, faceDataUrl } from './cards.js';
 import { rulesHtml } from './rules.js';
-import { COLORS, COLOR_NAMES, COLOR_HEX, PLAYER_LIMIT, PLAYER_MIN, AVATARS, CHAOS, CHAOS_LEVELS, DOOM, DOOM_LEVELS, specialInfo } from '../../shared/rules.js';
+import {
+  COLORS, COLOR_NAMES, COLOR_HEX, PLAYER_LIMIT, PLAYER_MIN, AVATARS, CHAOS, CHAOS_LEVELS, DOOM, DOOM_LEVELS,
+  EVENT_LEVELS, WHEEL, THEME_EVENTS, specialInfo,
+} from '../../shared/rules.js';
 
 // Halluzinationen: Quatsch statt echter Infos
 const SILLY_NAMES = ['Herr Toast', 'Karl der Löffel', 'Frau Gurke', 'Sir Quietschi', 'Der Kühlschrank', 'Tante Pudding', 'Bernd Brot', 'Lord Socke', 'Kaktus-Klaus', 'Pommes-Paula', 'Der Mond', 'Wackelpeter', 'Oma Turbo', 'Käpt’n Keks'];
@@ -45,7 +48,14 @@ store.set('fw.avatar', state.avatar);
 const stage = new Stage(document.getElementById('stage'));
 initCards(stage.renderer);
 stage.setTheme(store.get('fw.theme', 'neon'));
-const board = new Board(stage, { onCardClick, onPileClick, onHover: showTip });
+const board = new Board(stage, { onCardClick, onPileClick, onHover: showTip, onShake: shake });
+
+function shake() {
+  document.body.classList.remove('shake');
+  void document.body.offsetWidth;
+  document.body.classList.add('shake');
+  setTimeout(() => document.body.classList.remove('shake'), 900);
+}
 window.__fw = { stage, board, state, send: (m) => net.send(m), doomAlert: (...a) => doomAlert(...a) };
 
 // ---------- DOM-Gerüst ----------
@@ -118,7 +128,28 @@ function onMessage(msg) {
       toast(msg.msg, 'error');
       sfx('error');
       break;
+    case 'xray':
+      showXray(msg);
+      break;
   }
+}
+
+/** Röntgenblick: Karten eines Gegners für ein paar Sekunden zeigen (nur für dich). */
+function showXray(msg) {
+  sfx('xray');
+  const el = document.createElement('div');
+  el.className = 'xray panel';
+  const secs = Math.round((msg.ms ?? 5000) / 1000);
+  el.innerHTML = `<div class="xray-head">👁 Röntgenblick: <b>${esc(msg.name)}</b> <span class="xray-timer">${secs}</span></div>
+    <div class="xray-cards">${msg.cards.map((c) => `<img src="${faceDataUrl(c)}" alt="" />`).join('') || '<i>keine Karten</i>'}</div>`;
+  $('alert').appendChild(el);
+  let left = secs;
+  const iv = setInterval(() => {
+    left--;
+    const t = el.querySelector('.xray-timer');
+    if (t) t.textContent = String(Math.max(0, left));
+    if (left <= 0) { clearInterval(iv); el.classList.add('out'); setTimeout(() => el.remove(), 400); }
+  }, 1000);
 }
 
 function onRoom(v) {
@@ -134,6 +165,15 @@ function onRoom(v) {
   if (state.pick && !v.hand.some((c) => c.id === state.pick.card.id)) state.pick = null;
 
   board.sync(v, v.events);
+  // Stromausfall: verbleibende Zeit vom Server übernehmen (auch nach Neuladen)
+  const g = v.game;
+  if (g?.blackoutUntil && g.blackoutUntil > g.serverNow) {
+    const secs = (g.blackoutUntil - g.serverNow) / 1000;
+    board.setBlackout(secs);
+    document.body.classList.add('blackout');
+    clearTimeout(state.blackoutTimer);
+    state.blackoutTimer = setTimeout(() => { document.body.classList.remove('blackout'); render(); }, secs * 1000);
+  }
   handleEvents(v, prev);
   const actor = v.game?.actorId;
   if (v.phase === 'playing' && actor === v.me && state.lastActor !== v.me) sfx('turn');
@@ -157,6 +197,7 @@ function onCardClick(card) {
   if (card.kind === 'chaos' || card.kind === 'doom') {
     if (card.effect === 'dirChaos' && v.game.dirChaos > 0) { state.pick = { type: 'dir', card }; sfx('click'); return render(); }
     if (specialInfo(card)?.target) { state.pick = { type: 'swap', card }; sfx('click'); return render(); }
+    if (specialInfo(card)?.color) { state.pick = { type: 'color', card }; sfx('click'); return render(); }
     return net.send({ t: 'play', cardId: card.id });
   }
   if (card.color === 'w') { state.pick = { type: 'color', card }; sfx('click'); return render(); }
@@ -173,7 +214,7 @@ function onPileClick() {
 
 function showTip(card) {
   const el = $('tip');
-  if ((card?.kind === 'chaos' || card?.kind === 'doom') && !state.pick) {
+  if ((card?.kind === 'chaos' || card?.kind === 'doom') && !state.pick && !board.isBlackout()) {
     const fx = specialInfo(card);
     el.innerHTML = `<b>${card.kind === 'doom' ? '☠ DOOM' : 'Chaos'}: ${esc(fx.name)}</b><span>${esc(fx.desc)}</span>`;
     el.classList.toggle('doom', card.kind === 'doom');
@@ -243,6 +284,15 @@ ui.addEventListener('click', (e) => {
     case 'pass': return net.send({ t: 'pass' });
     case 'challenge': return net.send({ t: 'challenge', challenge: true });
     case 'accept': return net.send({ t: 'challenge', challenge: false });
+    case 'mirrorUse': sfx('mirror'); return net.send({ t: 'mirror', use: true });
+    case 'mirrorSkip': return net.send({ t: 'mirror', use: false });
+    case 'mirrorPlay': {
+      // Spiegel gegen +4 / Stapel im eigenen Zug
+      const m = state.view?.hand.find((c) => c.kind === 'chaos' && c.effect === 'mirror');
+      if (m) { sfx('mirror'); net.send({ t: 'play', cardId: m.id }); }
+      return;
+    }
+    case 'debugEvent': sfx('pop'); return net.send({ t: 'debugEvent', kind: b.dataset.kind });
     case 'catch': return net.send({ t: 'catch', target: Number(b.dataset.id) });
     case 'color': {
       const card = state.pick?.card;
@@ -357,7 +407,7 @@ function render() {
 // ---------- Debug-Menü (nur wenn der Server mit FW_DEBUG=1 läuft) ----------
 
 const DEBUG_KIND_LABELS = [['0', '0'], ['1', '1'], ['2', '2'], ['3', '3'], ['4', '4'], ['5', '5'], ['6', '6'], ['7', '7'], ['8', '8'], ['9', '9'],
-  ['skip', 'Aussetzen'], ['rev', 'Richtungswechsel'], ['draw2', '+2'], ['acid', 'Säure']];
+  ['skip', 'Aussetzen'], ['rev', 'Richtungswechsel'], ['draw2', '+2'], ['acid', 'Säure'], ['lottery', 'Lotterie']];
 
 function renderDebug(v) {
   const show = state.debug && v && v.phase !== 'lobby';
@@ -385,6 +435,12 @@ function renderDebug(v) {
       <div class="dbg-sec"><span>Säure</span><div class="dbg-row">
         ${COLORS.map((c) => give([{ color: c, kind: 'acid' }], `💧 ${COLOR_NAMES[c]}`, 'colored', `--c:${COLOR_HEX[c]}`)).join('')}
         ${give(COLORS.map((c) => ({ color: c, kind: 'acid' })), 'Alle 4')}
+      </div></div>
+      <div class="dbg-sec"><span>Lotterie</span><div class="dbg-row">
+        ${COLORS.map((c) => give([{ color: c, kind: 'lottery' }], `🎲 ${COLOR_NAMES[c]}`, 'colored', `--c:${COLOR_HEX[c]}`)).join('')}
+      </div></div>
+      <div class="dbg-sec"><span>Tisch-Ereignis auslösen</span><div class="dbg-row">
+        ${[['wheel', '🎡 Glücksrad'], ['ice', '🧊 Glatteis'], ['blackout', '🔌 Stromausfall'], ['rain', '🌧 Regen']].map(([k, l]) => `<button class="dbg-card" data-act="debugEvent" data-kind="${k}" ${playing ? '' : 'disabled'}>${l}</button>`).join('')}
       </div></div>
       <div class="dbg-sec"><span>Chaos-Karten</span><div class="dbg-grid">
         ${Object.entries(CHAOS).map(([k, fx]) => give([{ kind: 'chaos', effect: k }], `<i>${esc(fx.icon)}</i>${esc(fx.name)}`, 'chaos')).join('')}
@@ -521,8 +577,11 @@ function renderLobby(v) {
           <p class="hint chaos-hint">Chance pro gezogener Karte auf eine Chaos-Karte: ${Object.values(CHAOS).map((c) => esc(c.name)).join(' · ')}</p>
           <div class="set doom-set"><span>☠ DOOM-Karten</span>${seg('doom', s.doom, DOOM_LEVELS.map((l) => [l, l ? `${l} %` : 'Aus']), isHost)}</div>
           <p class="hint doom-hint">Sehr selten und sehr fies: ${Object.values(DOOM).map((c) => esc(c.name)).join(' · ')}</p>
+          <div class="set"><span>🎡 Tisch-Ereignisse</span>${seg('events', s.events, EVENT_LEVELS, isHost)}</div>
+          <p class="hint">Ab und zu dreht sich das Glücksrad oder der Tisch schlägt zu – hier: ${esc((THEME_EVENTS[s.theme] ?? THEME_EVENTS.neon).icon)} ${esc((THEME_EVENTS[s.theme] ?? THEME_EVENTS.neon).name)}.</p>
           <h3>Hausregeln</h3>
           ${toggle('acid', s.acid, 'Säure-Karten', 'Je eine pro Farbe: Wer z. B. rote Säure legt, wirft alle seine roten Karten mit ab.', isHost)}
+          ${toggle('lottery', s.lottery, 'Lotterie-Karten', 'Je eine pro Farbe: Alle würfeln – niedrigster Wurf zieht 3, höchster wirft 1 Karte ab.', isHost)}
           ${toggle('stacking', s.stacking, 'Stapeln', '+2 auf +2 und +4 auf +2/+4 – der Nächste zieht alles.', isHost)}
           ${toggle('zeroPass', s.zeroPass, '0 – Hände weiterreichen', 'Wer eine 0 legt, lässt alle Hände einen Platz in Spielrichtung weiterwandern.', isHost)}
           ${toggle('jumpIn', s.jumpIn, 'Reinwerfen', 'Exakt gleiche Karte jederzeit dazwischenwerfen.', isHost)}
@@ -557,7 +616,13 @@ function renderHud(v) {
     ${g ? `<span class="chip color-chip" style="--c:${COLOR_HEX[g.color]}">Farbe <b>${COLOR_NAMES[g.color]}</b></span>` : ''}
     ${g?.pending ? `<span class="chip warn">+${g.pending} offen</span>` : ''}
     ${g?.dirChaos ? `<span class="chip dirchaos">🔀 Richtungschaos <b>${g.dirChaos}</b></span>` : ''}
-    ${me?.hallu && v.phase === 'playing' ? `<span class="chip hallu">🍄 Du halluzinierst – noch <b>${me.hallu}</b> ${me.hallu === 1 ? 'Zug' : 'Züge'}</span>` : ''}`;
+    ${me?.hallu && v.phase === 'playing' ? `<span class="chip hallu">🍄 Du halluzinierst – noch <b>${me.hallu}</b> ${me.hallu === 1 ? 'Zug' : 'Züge'}</span>` : ''}
+    ${g?.frozen ? `<span class="chip frozen">❄ <b>${COLOR_NAMES[g.frozen.color]}</b> eingefroren · ${g.frozen.turns}</span>` : ''}
+    ${g?.wet ? `<span class="chip wet">🌧 <b>${COLOR_NAMES[g.wet]}</b> ist nass – zählt doppelt</span>` : ''}
+    ${g?.ice ? '<span class="chip ice">🧊 Glatteis – die nächste Karte rutscht</span>' : ''}
+    ${g?.bomb ? `<span class="chip bomb ${g.bomb.danger ? 'danger' : ''}">💣 Zeitbombe tickt${g.bomb.power > 10 ? ` (+${g.bomb.power})` : ''}</span>` : ''}
+    ${me?.curse ? `<span class="chip cursed">🩸 Verflucht: nur <b>${COLOR_NAMES[me.curse.color]}</b> · ${me.curse.turns}</span>` : ''}
+    ${me?.pact ? `<span class="chip pact">😈 Pakt: noch <b>${me.pact}</b> ${me.pact === 1 ? 'Zug' : 'Züge'} zum Sieg</span>` : ''}`;
 
   // Sitze der Gegner (beim Halluzinieren: nur Quatsch)
   const swapMode = state.pick?.type === 'swap';
@@ -583,6 +648,9 @@ function renderHud(v) {
       ${!hallu && p.doom ? `<div class="flag doomflag">☠ DOOM ×${p.doom}</div>` : ''}
       ${!hallu && p.chaos ? `<div class="flag chaosflag">✦ Chaos ×${p.chaos}</div>` : ''}
       ${!hallu && p.hallu ? '<div class="flag halluflag">🍄 halluziniert</div>' : ''}
+      ${g?.bomb?.holder === p.id ? `<div class="flag bombflag ${g.bomb.danger ? 'danger' : ''}">💣 Bombe!</div>` : ''}
+      ${!hallu && p.curse ? `<div class="flag curseflag">🩸 nur ${COLOR_NAMES[p.curse.color]} · ${p.curse.turns}</div>` : ''}
+      ${!hallu && p.pact ? `<div class="flag pactflag">😈 Pakt ${p.pact}</div>` : ''}
       ${!hallu && p.vulnerable ? `<button class="btn danger small catch" data-act="catch" data-id="${p.id}">Erwischt!</button>` : ''}
       <div class="timer" data-timer="${p.id}"></div>
     </div>`;
@@ -601,12 +669,13 @@ function renderHud(v) {
     if (swapMode) banner = '';
     else if (myTurn) {
       if (awaiting?.type === 'drawn') banner = 'Gezogene Karte spielen oder behalten?';
-      else if (awaiting?.type === 'challenge') banner = '';
+      else if (awaiting?.type === 'challenge' || awaiting?.type === 'mirror') banner = '';
       else if (g.pending > 0) banner = `Du bist dran – stapeln oder ${g.pending} ziehen`;
       else banner = 'Du bist dran!';
     } else {
       const a = playerById(v, actor);
       if (awaiting?.type === 'challenge') banner = `${esc(a?.name)} überlegt, ob die +4 ein Bluff war …`;
+      else if (awaiting?.type === 'mirror') banner = `🪞 ${esc(a?.name)} überlegt, ob der Angriff zurückgespiegelt wird …`;
       else banner = `${esc(a?.name)} ist dran`;
     }
   }
@@ -626,9 +695,10 @@ function renderHud(v) {
 
   // Entscheidung bei +4
   let decision = '';
+  const hasMirror = v.hand.some((c) => c.kind === 'chaos' && c.effect === 'mirror');
   if (v.phase === 'playing' && myTurn && awaiting?.type === 'challenge') {
     const off = playerById(v, awaiting.offender);
-    const canStack = v.settings.stacking && v.playable.length > 0;
+    const canStack = v.settings.stacking && v.hand.some((c) => c.kind === 'wild4');
     decision = `<div class="decision panel">
       <p><b>${esc(off?.name)}</b> hat eine <b>+4</b> gespielt.</p>
       <p class="small">Zweifelst du an und ${esc(off?.name)} hatte doch eine passende Farbe, zieht ${esc(off?.name)} 4 Karten. Sonst ziehst du ${g.pending + 2}.</p>
@@ -636,8 +706,22 @@ function renderHud(v) {
       <div class="row">
         <button class="btn danger" data-act="challenge">Bluff anzweifeln</button>
         <button class="btn secondary" data-act="accept">Annehmen (+${g.pending})</button>
+        ${hasMirror ? `<button class="btn mirror" data-act="mirrorPlay">🪞 Zurückspiegeln (+${g.pending} an ${esc(off?.name)})</button>` : ''}
       </div>
     </div>`;
+  } else if (v.phase === 'playing' && awaiting?.type === 'mirror' && awaiting.player === v.me) {
+    const att = playerById(v, awaiting.attacker);
+    const what = { draw2: '+2', plus50: '+50', plus4All: 'Alle +4', plus100: '☠ +100', meteor: '☄ Meteor', stack: 'Zurückgespiegelt' }[awaiting.source] ?? 'Angriff';
+    decision = `<div class="decision panel mirror-panel">
+      <p>🪞 <b>${esc(att?.name)}</b> greift dich an: <b>${what}</b> – du müsstest <b>${awaiting.amount}</b> Karten ziehen.</p>
+      <p class="small">Du hast einen Spiegel! Setzt du ihn ein, trifft der Angriff ${esc(att?.name)} selbst.</p>
+      <div class="row">
+        <button class="btn mirror big" data-act="mirrorUse">🪞 Zurückspiegeln</button>
+        <button class="btn secondary" data-act="mirrorSkip">Annehmen (+${awaiting.amount})</button>
+      </div>
+    </div>`;
+  } else if (v.phase === 'playing' && myTurn && g.pending > 0 && hasMirror) {
+    decision = `<div class="decision panel slim"><p>🪞 Du kannst die <b>+${g.pending}</b> mit deinem Spiegel zurückschicken.</p><button class="btn mirror small" data-act="mirrorPlay">Zurückspiegeln</button></div>`;
   } else if (swapMode) {
     const pc = state.pick.card;
     const text = pc.kind === 'chaos' || pc.kind === 'doom'
@@ -676,10 +760,15 @@ function renderModal(v) {
       </div>
     </div>`;
   } else if (state.pick?.type === 'color') {
+    const isFreeze = state.pick.card.effect === 'freeze';
+    const frozen = v?.game?.frozen?.color;
     html = `<div class="overlay">
       <div class="panel picker">
-        <h2>Farbe wählen</h2>
-        <div class="wheel">${COLORS.map((c) => `<button data-act="color" data-color="${c}" style="--c:${COLOR_HEX[c]}" aria-label="${COLOR_NAMES[c]}"><span>${COLOR_NAMES[c]}</span></button>`).join('')}</div>
+        <h2>${isFreeze ? '❄ Welche Farbe einfrieren?' : 'Farbe wählen'}</h2>
+        <div class="wheel">${COLORS.map((c) => {
+          const blocked = !isFreeze && c === frozen;
+          return `<button data-act="color" data-color="${c}" style="--c:${COLOR_HEX[c]}" aria-label="${COLOR_NAMES[c]}" ${blocked ? 'disabled title="eingefroren"' : ''}><span>${blocked ? '❄ ' : ''}${COLOR_NAMES[c]}</span></button>`;
+        }).join('')}</div>
         <button class="btn ghost small" data-act="cancelPick">Abbrechen</button>
       </div>
     </div>`;
@@ -753,6 +842,37 @@ function confetti() {
   }
 }
 
+/** Glücksrad: dreht sich in der Bildschirmmitte und bleibt auf dem Ergebnis stehen. */
+function showWheel(index) {
+  const n = WHEEL.length;
+  const seg = 360 / n;
+  const cols = ['#e8364a', '#ffc21a', '#1fb35a', '#1f7fe8', '#b44dff'];
+  const grad = cols.map((c, i) => `${c} ${i * seg}deg ${(i + 1) * seg}deg`).join(', ');
+  const el = document.createElement('div');
+  el.className = 'wheel-event';
+  el.innerHTML = `<div class="wheel-title">🎡 GLÜCKSRAD</div>
+    <div class="wheel-wrap">
+      <div class="wheel-pointer">▼</div>
+      <div class="wheel-disc" style="background: conic-gradient(${grad})">
+        ${WHEEL.map((w, i) => `<span style="transform: rotate(${i * seg + seg / 2}deg) translateY(calc(var(--wheel-size) * -0.3))">${esc(w.label)}</span>`).join('')}
+      </div>
+    </div>
+    <div class="wheel-result"></div>`;
+  $('alert').appendChild(el);
+  const disc = el.querySelector('.wheel-disc');
+  // Segment-Mitte des Ergebnisses nach oben (unter den Zeiger) drehen
+  const final = 360 * 5 + (360 - (index * seg + seg / 2));
+  requestAnimationFrame(() => requestAnimationFrame(() => { disc.style.transform = `rotate(${final}deg)`; }));
+  setTimeout(() => {
+    const w = WHEEL[index];
+    el.querySelector('.wheel-result').innerHTML = `<b>${esc(w.label)}</b><span>${esc(w.desc)}</span>`;
+    el.classList.add('done');
+    sfx('pop');
+  }, 2500);
+  setTimeout(() => el.classList.add('out'), 4600);
+  setTimeout(() => el.remove(), 5100);
+}
+
 /** Riesige DOOM-Warnung über den ganzen Bildschirm, für alle sichtbar. */
 function doomAlert(title, sub, played = false) {
   if (!played) sfx('doomDraw');
@@ -814,6 +934,11 @@ function handleEvents(v, prev) {
         if (e.effect === 'dirChaos') {
           const txt = { start: '10 Züge lang wird nach jedem Zug gewürfelt!', cancel: 'Richtungschaos aufgehoben!', extend: '+10 Züge Richtungschaos!' }[e.choice];
           toast(`${who}: ${txt}`, 'chaos');
+        } else if (e.effect === 'freeze') {
+          sfx('freeze');
+          toast(`❄ ${name(e.player)} friert ${COLOR_NAMES[e.color]} ein – 2 Runden lang darf niemand diese Farbe spielen.`, 'chaos');
+        } else if (e.effect === 'xray') {
+          if (e.player !== v.me) toast(`👁 ${name(e.player)} wirft einen Röntgenblick in die Karten von ${e.target === v.me ? 'dir' : name(e.target)}!`, 'chaos');
         } else toast(`${who}: ${fx.name} – ${fx.desc}`, 'chaos');
         if (e.target) setTimeout(() => pop(fx.icon, posOf(v, e.target), 'warn'), 500);
         break;
@@ -839,8 +964,12 @@ function handleEvents(v, prev) {
       case 'doom': {
         const fx = DOOM[e.effect];
         const who = e.target ? `${name(e.player)} → ${name(e.target)}` : name(e.player);
-        sfx('doomPlay');
-        doomAlert(`DOOM: ${fx.name}`, `${who} – ${fx.desc}`, true);
+        sfx(e.effect === 'meteor' ? 'meteor' : 'doomPlay');
+        let sub = `${who} – ${fx.desc}`;
+        if (e.effect === 'curse') sub = `${name(e.target)} darf 5 Züge lang nur noch ${COLOR_NAMES[e.color]} spielen!`;
+        if (e.effect === 'pact') sub = `${name(e.player)} wirft ${e.n} Karten ab – und muss in 5 Zügen gewinnen, sonst +20!`;
+        if (e.effect === 'meteor') sub = `Einschläge bei ${e.hits.map((h) => `${name(h.id)} (+${h.n})`).join(', ')}`;
+        doomAlert(`DOOM: ${fx.name}`, sub, true);
         if (e.target) setTimeout(() => pop(fx.icon, posOf(v, e.target), 'warn doompop'), 900);
         if (e.effect === 'hallu' && e.player !== v.me) setTimeout(() => toast('🍄 Du halluzinierst! Traue deinen Augen nicht …', 'doom'), 1500);
         break;
@@ -852,6 +981,53 @@ function handleEvents(v, prev) {
         break;
       case 'halluEnd':
         if (e.player === v.me) toast('Die Halluzination lässt nach. Alles wieder normal … oder?');
+        break;
+      // --- Spiegel, Bombe, Dieb, Eiszeit, Fluch, Pakt ---
+      case 'mirror': {
+        sfx('mirror');
+        pop('🪞 GESPIEGELT!', centerPos(), 'big mirrorpop');
+        const sub = pop(`${name(e.by)} schickt +${e.amount} zurück an ${name(e.to)}`, centerPos(), 'small mirror-sub');
+        sub.style.marginTop = '3.2rem';
+        break;
+      }
+      case 'bombArm': sfx('tick'); pop(e.power > 10 ? `💣 Bombe verstärkt: +${e.power}!` : '💣 Zeitbombe scharf!', centerPos(), 'big bombpop'); break;
+      case 'bombMove': sfx(e.danger ? 'tickFast' : 'tick'); if (e.player === v.me) pop('💣 Du hast die Bombe!', posOf(v, e.player), 'warn'); break;
+      case 'bombBoom':
+        sfx('boom');
+        pop(`💥 BOOM! +${e.n}`, posOf(v, e.player), 'big doompop');
+        toast(`💣 Die Bombe ist bei ${e.player === v.me ? 'dir' : name(e.player)} explodiert: +${e.n} Karten`, 'doom');
+        break;
+      case 'steal': sfx('steal'); pop('🧤 Geklaut!', posOf(v, e.from), 'warn'); break;
+      case 'thaw': sfx('freeze'); toast(`❄ ${COLOR_NAMES[e.color]} ist wieder aufgetaut`); break;
+      case 'curseEnd': if (e.player === v.me) toast('🩸 Der Fluch ist gebrochen – du darfst wieder alles spielen.'); break;
+      case 'pactDoom':
+        sfx('doomPlay');
+        doomAlert('Der Pakt fordert seinen Preis!', `${e.player === v.me ? 'Du ziehst' : `${name(e.player)} zieht`} ${e.n} Karten aus dem Höllenportal`, true);
+        break;
+      // --- Lotterie ---
+      case 'lottery': {
+        sfx('dice');
+        pop('🎲 LOTTERIE!', centerPos(), 'big lotterypop');
+        e.rolls.forEach((r, i) => setTimeout(() => {
+          const cls = e.losers.includes(r.id) ? 'warn' : e.winners.includes(r.id) ? 'dicewin' : 'small';
+          pop(`🎲 ${r.roll}`, posOf(v, r.id), `dice ${cls}`);
+        }, 350 + i * Math.min(120, 1500 / e.rolls.length)));
+        if (e.losers.includes(v.me)) setTimeout(() => toast('🎲 Niedrigster Wurf – du ziehst 3 Karten.'), 1600);
+        if (e.winners.includes(v.me)) setTimeout(() => toast('🎲 Höchster Wurf – du wirfst eine Karte ab!'), 1600);
+        break;
+      }
+      case 'lotteryDrop': setTimeout(() => pop('−1', posOf(v, e.player), 'dicewin'), 1500); break;
+      case 'underdog': pop('−3 Ausgleich', posOf(v, e.player), 'dicewin'); break;
+      // --- Tisch-Ereignisse ---
+      case 'iceSlide':
+        sfx('freeze');
+        pop(`🧊 Ausgerutscht! ${COLOR_NAMES[e.from]} → ${COLOR_NAMES[e.to]}`, centerPos(), 'big icepop');
+        break;
+      case 'tableEvent':
+        if (e.kind === 'wheel') { sfx('wheel'); showWheel(e.index); }
+        else if (e.kind === 'ice') { sfx('freeze'); pop('🧊 GLATTEIS!', centerPos(), 'big icepop'); toast('🧊 Glatteis: Die nächste gelegte Karte rutscht aus und bekommt eine zufällige Farbe.'); }
+        else if (e.kind === 'blackout') { sfx('blackout'); pop('🔌 STROMAUSFALL!', centerPos(), 'big blackoutpop'); toast('🔌 Stromausfall: 10 Sekunden lang sind alle Karten verdeckt – du spielst blind!'); }
+        else if (e.kind === 'rain') { sfx('rain'); pop(`🌧 REGEN: ${COLOR_NAMES[e.color]} ist nass!`, centerPos(), 'big rainpop'); toast(`🌧 Alle ${COLOR_NAMES[e.color]}-Karten zählen am Rundenende doppelt – schnell loswerden!`); }
         break;
       case 'call': if (e.player !== v.me) sfx('call'); pop('Letzte Karte!', posOf(v, e.player), 'call'); break;
       case 'caught': sfx('caught'); pop('Erwischt! +2', posOf(v, e.player), 'warn'); break;

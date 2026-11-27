@@ -2,12 +2,15 @@
 // Aufruf: npm test
 import { Room } from '../server/room.js';
 import { botDecide } from '../server/bot.js';
-import { deckSize, CHAOS_KEYS, DOOM_KEYS } from '../shared/rules.js';
+import { deckSize, CHAOS_KEYS, DOOM_KEYS, WHEEL } from '../shared/rules.js';
 import { HELL_ID_START } from '../server/room.js';
 
 const variants = [
   {},
-  { acid: false, doom: 0 },
+  { acid: false, lottery: false, doom: 0, events: 0 },
+  { events: 2, theme: 'winter', chaos: 20 },
+  { events: 2, theme: 'garden', chaos: 20, doom: 10, stacking: true },
+  { events: 2, theme: 'neon', chaos: 35, doom: 15 },
   { doom: 15, chaos: 20 },
   { doom: 10, chaos: 35, stacking: true, zeroPass: true },
   { stacking: true },
@@ -24,6 +27,8 @@ let dirRolls = 0;
 let timeLimits = 0;
 let acidPlays = 0;
 let acidDumped = 0;
+const seen = new Map(); // weitere Ereignisse: Spiegel, Bombe, Lotterie, Pakt, Tisch-Ereignisse …
+const count = (k) => seen.set(k, (seen.get(k) ?? 0) + 1);
 
 let rounds = 0;
 let actions = 0;
@@ -47,6 +52,9 @@ for (const v of variants) {
           if (e.type === 'doom') doomSeen.add(e.effect);
           if (e.type === 'dirRoll') dirRolls++;
           if (e.type === 'acid') { acidPlays++; acidDumped += e.cards.length; }
+          if (e.type === 'mirror') { effectsSeen.add('mirror'); count('mirror'); }
+          if (['bombBoom', 'lottery', 'lotteryDrop', 'pactDoom', 'steal', 'thaw', 'curseEnd', 'iceSlide', 'underdog'].includes(e.type)) count(e.type);
+          if (e.type === 'tableEvent') count(e.kind === 'wheel' ? 'wheel:' + e.result : e.kind);
           return origEv.call(this, e);
         };
         room.perform(a, botDecide(room, a, room.settings.botLevel));
@@ -63,6 +71,9 @@ for (const v of variants) {
           if (new Set(all.map((c) => c.id)).size !== all.length) throw new Error('Doppelte Karten');
           if ([...room.game.draw, ...room.game.discard].some((c) => c.kind === 'chaos' || c.kind === 'doom')) throw new Error('Sonderkarte im Stapel');
           if (room.game.dirChaos < 0) throw new Error('Richtungschaos negativ');
+          const aw = room.game.awaiting;
+          if (aw?.type === 'mirror' && !room.byId(aw.player).hand.some((c) => c.effect === 'mirror')) throw new Error('Spiegel-Abfrage ohne Spiegel');
+          if (room.game.frozen && room.game.frozen.turns <= 0) throw new Error('Eiszeit nicht abgelaufen');
         }
       }
       if (!room.result) throw new Error('Kein Ergebnis');
@@ -80,3 +91,7 @@ if (doomSeen.size < DOOM_KEYS.length) throw new Error('Nicht alle DOOM-Effekte w
 if (!dirRolls) throw new Error('Richtungschaos hat nie gewürfelt');
 if (effectsSeen.size < CHAOS_KEYS.length) throw new Error('Nicht alle Chaos-Effekte wurden ausgelöst');
 if (!acidPlays) throw new Error('Säure wurde nie gespielt');
+console.log('Weitere Ereignisse: ' + [...seen].sort().map(([k, n]) => k + '×' + n).join(', '));
+const need = ['mirror', 'bombBoom', 'lottery', 'lotteryDrop', 'pactDoom', 'steal', 'thaw', 'curseEnd', 'iceSlide', 'underdog', 'blackout', 'rain', 'ice', ...WHEEL.map((w) => 'wheel:' + w.key)];
+const missing = need.filter((k) => !seen.get(k));
+if (missing.length) throw new Error('Nie ausgelöst: ' + missing.join(', '));

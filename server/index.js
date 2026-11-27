@@ -23,7 +23,8 @@ const sessions = new Map();
 // ---------- Debug-Modus (FW_DEBUG=1) ----------
 const DEBUG = process.env.FW_DEBUG === '1';
 let debugId = 5_000_000;
-const DEBUG_KINDS = new Set(['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'skip', 'rev', 'draw2', 'acid']);
+const DEBUG_KINDS = new Set(['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'skip', 'rev', 'draw2', 'acid', 'lottery']);
+const DEBUG_EVENTS = new Set(['wheel', 'ice', 'blackout', 'rain']);
 function validDebugCard(c) {
   if (!c || typeof c !== 'object') return null;
   if (c.kind === 'chaos') return CHAOS_KEYS.includes(c.effect) ? { color: 'x', kind: 'chaos', effect: c.effect } : null;
@@ -201,6 +202,16 @@ wss.on('connection', (ws) => {
             room.ev({ type: 'debug', player: target.id, n: given });
             room.afterAction(false);
           }
+          return;
+        }
+        case 'debugEvent': {
+          // Nur zum Testen: Tisch-Ereignis sofort auslösen
+          if (!DEBUG || !session.player) return;
+          const room = session.room;
+          if (room?.phase !== 'playing') throw new GameError('Debug: Ereignisse gibt es nur während einer Runde.');
+          if (!DEBUG_EVENTS.has(msg.kind)) return;
+          room.triggerEvent(msg.kind);
+          room.afterAction(false);
           return;
         }
         case 'ping':

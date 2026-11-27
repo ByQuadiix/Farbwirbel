@@ -104,6 +104,9 @@ export class Stage {
     this.hemi.intensity = t.hemiIntensity;
     this.sun.color.set(t.sunColor);
     this.sun.intensity = t.sunIntensity;
+    // Basiswerte merken (Stromausfall dimmt relativ dazu)
+    this.baseHemi = t.hemiIntensity;
+    this.baseSun = t.sunIntensity;
     this.renderer.toneMappingExposure = t.exposure ?? 1.05;
   }
 

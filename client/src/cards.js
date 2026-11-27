@@ -174,6 +174,25 @@ function symbol(ctx, card, x, y, s, fill) {
       arrow(ctx, x - d, y - d * 0.15, x + d * 0.7, y - d * 0.95, s * 0.2);
       arrow(ctx, x + d, y + d * 0.15, x - d * 0.7, y + d * 0.95, s * 0.2);
     }, w, fill);
+  } else if (k === 'lottery') {
+    // Würfel (zeigt die 5)
+    const d = s * 0.6;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(-0.2);
+    rr(ctx, -d / 2, -d / 2, d, d, d * 0.2);
+    ctx.lineWidth = s * 0.08;
+    ctx.strokeStyle = OUTLINE;
+    ctx.stroke();
+    ctx.fillStyle = fill;
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    for (const [px, py] of [[-1, -1], [1, -1], [0, 0], [-1, 1], [1, 1]]) {
+      ctx.beginPath();
+      ctx.arc(px * d * 0.25, py * d * 0.25, d * 0.09, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
   } else if (k === 'acid') {
     const drop = (dx, dy, ds) => {
       ctx.beginPath();
@@ -409,6 +428,24 @@ function drawFace(card) {
     diamond(ctx, 170, 'rgba(255,255,255,0.96)');
     symbol(ctx, card, TW / 2, TH / 2, 168, base);
     outlinedText(ctx, 'SÄURE', TW / 2, TH - 92, 40, '#d8ff7a');
+  } else if (card.kind === 'lottery') {
+    // Konfetti-Glitzer im Hintergrund
+    ctx.save();
+    rr(ctx, 16, 16, TW - 32, TH - 32, 20);
+    ctx.clip();
+    let seed = card.color.charCodeAt(0) * 97;
+    const rnd = () => { seed = (seed * 16807) % 2147483647; return (seed % 1000) / 1000; };
+    for (let i = 0; i < 26; i++) {
+      ctx.fillStyle = ['#ffffff', '#ffe066', '#ff8af7', '#8ff0ff'][i % 4];
+      ctx.globalAlpha = 0.35 + rnd() * 0.3;
+      ctx.beginPath();
+      ctx.arc(20 + rnd() * (TW - 40), 20 + rnd() * (TH - 40), 3 + rnd() * 6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+    diamond(ctx, 170, 'rgba(255,255,255,0.96)');
+    symbol(ctx, card, TW / 2, TH / 2, 168, base);
+    outlinedText(ctx, 'LOTTERIE', TW / 2, TH - 92, 34, '#ffe066');
   } else {
     diamond(ctx, 170, 'rgba(255,255,255,0.96)');
     symbol(ctx, card, TW / 2, TH / 2, 168, base);
@@ -546,7 +583,7 @@ export function disposeCardMesh(mesh) {
 }
 
 const ORDER = { r: 0, y: 1, g: 2, b: 3, w: 4, x: 5, d: 6 };
-const KORDER = { skip: 10, rev: 11, draw2: 12, acid: 13, wild: 14, wild4: 15, chaos: 16, doom: 17 };
+const KORDER = { skip: 10, rev: 11, draw2: 12, acid: 13, lottery: 13.5, wild: 14, wild4: 15, chaos: 16, doom: 17 };
 export function sortHand(hand) {
   return [...hand].sort((a, b) => ORDER[a.color] - ORDER[b.color]
     || (KORDER[a.kind] ?? Number(a.kind)) - (KORDER[b.kind] ?? Number(b.kind)) || a.id - b.id);

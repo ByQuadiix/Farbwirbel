@@ -11,17 +11,28 @@ Ein einziger Docker-Container: Node.js liefert die Webseite aus und betreibt den
 - Offizielle Grundregeln inkl. +4-Bluff anzweifeln, „Letzte Karte!“ rufen / „Erwischt!“
 - **Säure-Karten** (je 1 in Rot, Gelb, Grün, Blau; in der Lobby abschaltbar): Wer z. B. rote Säure legt,
   wirft alle seine roten Karten mit ab. Die Säure bleibt oben liegen.
+- **🎲 Lotterie-Karten** (je 1 pro Farbe, abschaltbar): Alle würfeln – niedrigster Wurf zieht 3, höchster wirft 1 Karte ab.
 - **☠ DOOM-Karten** (Aus / 1 % / 3 %, Standard 1 %): extrem selten und fies. Beim Ziehen erscheint für alle eine riesige
   Warnung, die Karte qualmt rot mit Glutfunken. Effekte: **+100** (Ziel wählen), **Höllen-Tornado** (gleichmäßig verteilen +
   10 Höllenkarten pro Gegner), **Halluzinationen** (alle anderen sehen 3 Züge lang Enten & Essen statt Karten, Quatsch-Zahlen
-  und -Namen). Karten aus DOOM-Effekten steigen aus einem Höllenportal in der Tischmitte.
-- Regel-Seite im Spiel (?-Button) mit allen Karten
-- Hausregeln: Stapeln, 7–0, Reinwerfen, Ziehen bis passt
+  und -Namen), **Dämonenpakt** (halbe Hand sofort weg – wer nicht binnen 5 eigener Züge gewinnt, bekommt 20 Höllenkarten),
+  **Meteoritenhagel** (bis zu 3 Gegner bekommen je 5–15 Karten), **Fluch** (Ziel darf 5 Züge nur seine schwächste Farbe
+  spielen). Karten aus DOOM-Effekten steigen aus einem Höllenportal in der Tischmitte.
+- **Tisch-Ereignisse** (Aus / Selten / Oft): etwa alle 15 Züge kann das **Glücksrad** drehen (Alle +1, Richtung,
+  Weitergeben, Nachbartausch, Ausgleich) oder ein Theme-Ereignis passieren: **Glatteis** (Winter – die nächste Karte
+  rutscht in eine Nachbarfarbe), **Stromausfall** (Neon – 10 s lang Licht aus, eigene Karten verdeckt),
+  **Regen** (Garten – eine Farbe ist „nass“ und zählt am Rundenende doppelt).
+- Regel-Seite im Spiel (?-Button) mit allen Karten und Ereignissen
+- Hausregeln: Stapeln, 0 = Hände weiterreichen, Reinwerfen, Ziehen bis passt
 - **Chaos-Modus** (Aus / 5 / 10 / 20 / 35 %): Chance, dass eine gezogene Karte eine Chaos-Karte ist.
   Effekte: +50, 3× Aussetzen, Handtausch, Geschenk (3 Karten verschenken), Kartenwirbel (alle Hände neu verteilt),
   Tornado (alle Karten wirbeln um die Tischmitte und werden gleichmäßig neu verteilt),
   Farbrotation, Alle +4, Ausmisten. Chaos-Karten passen immer (außer bei offenen Strafkarten).
-  Neu: Richtungschaos (10 Züge lang 50 % Richtungswechsel nach jedem Zug; liegt es schon, wählt man: aufheben oder +10).
+  Dazu: Richtungschaos (10 Züge lang 50 % Richtungswechsel nach jedem Zug; liegt es schon, wählt man: aufheben oder +10),
+  **Zeitbombe** (tickt 3–8 Züge und wandert mit jedem Zug weiter – wer sie beim Knall hat, zieht 10),
+  **Spiegel** (Konter: wirft +2/+4/+50/Alle +4/+100/Meteor auf den Angreifer zurück – auch Ping-Pong),
+  **Dieb** (zufällige Karte klauen), **Röntgenblick** (5 s lang eine fremde Hand sehen),
+  **Eiszeit** (eine Farbe ist 2 Tischrunden lang für alle gesperrt).
   Wer eine Chaos-Karte zieht, löst eine lila Explosion aus; solange er sie hält, steigt für alle sichtbar
   lila Rauch von der Karte auf und am Namensschild steht „✦ Chaos ×N“ (welche Karte es ist, bleibt geheim).
   Gehen alle Karten aus, kommt ein frisches Deck ins Spiel; nach 2000 Zügen endet eine Runde automatisch.
@@ -85,8 +96,8 @@ Hinter einem Reverse Proxy (Nginx Proxy Manager, SWAG, Traefik) einfach auf Port
 ## Debug-Modus
 
 Mit der Umgebungsvariable `FW_DEBUG=1` erscheint im Spiel oben rechts ein 🛠-Button. Das Debug-Menü
-verteilt beliebige Karten (Säure, alle Chaos-Karten, Joker, eigene Karten in Wunschfarbe) an dich oder einen
-anderen Spieler – praktisch zum Ausprobieren. In `docker-compose.yml` ist die Zeile vorbereitet (auskommentiert).
+verteilt beliebige Karten (Säure, Lotterie, alle Chaos- und DOOM-Karten, Joker, eigene Karten in Wunschfarbe) an dich
+oder einen anderen Spieler und löst Tisch-Ereignisse sofort aus – praktisch zum Ausprobieren. In `docker-compose.yml` ist die Zeile vorbereitet (auskommentiert).
 Lokal: `$env:FW_DEBUG='1'; npm start` (PowerShell).
 
 ## Entwicklung

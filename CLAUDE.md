@@ -142,21 +142,28 @@ Zeilenenden sind per `.gitattributes` überall LF (Linux-Container). Das fertige
 | `play` | `cardId, color?, target?, dirChoice?` | Karte spielen (Farbe bei Joker, Ziel bei 7/Chaos/DOOM, `cancel`/`extend` bei Richtungschaos) |
 | `draw` / `pass` | – | ziehen / gezogene Karte behalten |
 | `challenge` | `challenge: bool` | +4 anzweifeln oder annehmen |
+| `mirror` | `use: bool` | Bei `awaiting {type:'mirror'}`: Angriff mit Spiegel zurückwerfen oder schlucken |
 | `callLast` / `catch` | `target` | „Letzte Karte!“ / jemanden erwischen |
 | `emote` | `emote` | Emoji-Blase |
 | `debugGive` | `cards:[…], target?` | **nur mit FW_DEBUG=1**: Karten auf eine Hand legen |
+| `debugEvent` | `kind: wheel\|ice\|blackout\|rain` | **nur mit FW_DEBUG=1**: Tisch-Ereignis sofort auslösen |
 | `ping` | `at` | → `pong` |
 
-**Server → Client:** `welcome {token,name,avatar,room,debug}`, `noroom`, `room {…view}`, `error {msg}`, `pong`.
+**Server → Client:** `welcome {token,name,avatar,room,debug}`, `noroom`, `room {…view}`, `error {msg}`, `pong`,
+`xray {target, name, cards, ms}` (nur an den Spieler, der Röntgenblick gespielt hat).
 
 **View (`room`)**: `code, hostId, phase ('lobby'|'playing'|'roundOver'), settings, me, players[] {id,name,avatar,isBot,
-connected,count,score,called,vulnerable,skipTurns,chaos,doom,hallu}, hand[], playable[], game {discard (letzte 14),
-color, turnId, actorId, dir, pending, dirChaos, drawCount, deadline, serverNow, round, awaiting}, result, events[]`.
+connected,count,score,called,vulnerable,skipTurns,chaos,doom,hallu,pact,curse{color,turns}}, hand[], playable[],
+game {discard (letzte 14), color, turnId, actorId, dir, pending, dirChaos, drawCount, deadline, serverNow, round,
+awaiting {type: drawn|challenge|mirror, player, …; bei mirror: attacker, amount, source}, frozen {color,turns}, wet,
+ice, blackoutUntil, bomb {holder, danger, power}}, result (inkl. `wet`), events[]`.
 
 **Events** (`room.ev`, alle mit `seq`): `deal, play {card, jumpIn, chaos, doom}, acid {color, cards}, skip {chaos,left},
-reverse, draw {n, penalty, chaos, doom}, pass, call, caught, challenge {guilty}, swap, rotate, shuffle, newDeck,
-chaos {effect, target, choice}, doom {effect, target, n}, dirRoll {flipped, left}, halluEnd, win, timeLimit, timeout,
-emote, join, leave, disconnect, reconnect, debug`.
+reverse, draw {n, penalty, chaos, doom, hell}, pass, call, caught, challenge {guilty}, rotate, shuffle, newDeck,
+chaos {effect, target, choice}, doom {effect, target, n, hits}, dirRoll {flipped, left}, halluEnd, mirror, bombArm,
+bombMove, bombBoom, steal, thaw, curseEnd, pactDoom, lottery {rolls, losers, winners}, lotteryDrop,
+underdog, iceSlide {from,to}, tableEvent {kind, index}, win, timeLimit, timeout, emote, join, leave, disconnect,
+reconnect, debug`.
 
 ---
 
@@ -164,12 +171,13 @@ emote, join, leave, disconnect, reconnect, debug`.
 
 **Kartenmodell:** `{ id, color, kind, effect? }`
 - `color`: `r y g b` (Farben), `w` (Joker), `x` (Chaos), `d` (DOOM)
-- `kind`: `'0'..'9'`, `skip`, `rev`, `draw2`, `acid`, `wild`, `wild4`, `chaos`, `doom`
+- `kind`: `'0'..'9'`, `skip`, `rev`, `draw2`, `acid`, `lottery`, `wild`, `wild4`, `chaos`, `doom`
+- `slidFrom` (nur auf dem Ablagestapel): Originalfarbe einer auf Glatteis gerutschten Karte; `reshuffle()` stellt sie wieder her.
 
 **ID-Bereiche** (wichtig für Tests/Invarianten): Grunddeck ab 1 · Zusatzdecks `decks*1000+1` · Chaos/DOOM ab
 `1_000_000` · Höllenkarten (aus DOOM-Effekten) ab `2_000_000` (`HELL_ID_START`) · Debug-Karten ab `5_000_000`.
 
-**Deck:** 108 Standardkarten + 4 Säure (wenn `settings.acid`) → `deckSize()`. Beim Rundenstart werden so viele Decks gemischt, dass alle Startkarten + 40 Reserve reichen (`decks = ceil((Spieler·Startkarten+40)/deckSize)`, Deck k hat IDs ab `k*1000+1`); später dürfen bis zu 5 weitere Decks dazukommen (`game.maxDecks`). Erste Ablagekarte ist immer eine Zahl.
+**Deck:** 108 Standardkarten + 4 Säure (wenn `settings.acid`) + 4 Lotterie (wenn `settings.lottery`) → `deckSize()`. Beim Rundenstart werden so viele Decks gemischt, dass alle Startkarten + 40 Reserve reichen (`decks = ceil((Spieler·Startkarten+40)/deckSize)`, Deck k hat IDs ab `k*1000+1`); später dürfen bis zu 5 weitere Decks dazukommen (`game.maxDecks`). Erste Ablagekarte ist immer eine Zahl.
 
 **Grundregeln:** gleiche Farbe oder gleiche Art. Aussetzen, Richtungswechsel (bei 2 Spielern = Aussetzen), +2,
 Joker, +4 mit **Bluff-Regel** (beim Legen wird `guilty = hat Karte der vorherigen Farbe` gespeichert; Anzweifeln:
@@ -178,12 +186,29 @@ Erwischt = +2. Gezogene passende Karte darf sofort gespielt werden (`awaiting {t
 
 **Säure** (1 pro Farbe): legt alle eigenen Karten dieser Farbe mit ab (unter die Säure, Säure bleibt oben).
 
-**Hausregeln** (Lobby-Schalter): `stacking`, `zeroPass` (0 = Hände weiterreichen; den früheren 7er-Handtausch gibt es nicht mehr), `jumpIn`, `drawToMatch`, `acid`.
+**Lotterie** (1 pro Farbe, normale Aktionskarte): `room.lottery(p)` – alle würfeln 1–6; niedrigster Wurf zieht 3,
+höchster wirft 1 zufällige Karte ab (nur mit ≥ 2 Karten). Bei Gleichstand aller passiert nichts.
 
-**Punkte:** Zahl = Wert · Aktion/Säure = 20 · Joker/Chaos = 50 · DOOM = 100. Punkteziel 0/200/300/500.
+**Angriffs-Warteschlange** (`g.attackQueue`, `startAttacks(list, resume)`, `continueAttacks()`, `applyAttack()`):
+Alle „X zieht N“-Angriffe (+2 ohne Stapeln, +50, Alle +4, +100, Meteor, gestapelte Strafen) laufen hier durch. Hält das
+Opfer einen **Spiegel**, pausiert das Spiel mit `awaiting {type:'mirror'}` → `mirrorDecision(p, use)`. Zurückwerfen
+tauscht Opfer und Angreifer – Ping-Pong ist möglich. Bei +4 gibt es den Spiegel als dritten Knopf im Anzweifeln-Dialog,
+bei offenen Stapel-Strafen kann man den Spiegel direkt spielen (`playMirror`, Quelle `stack`).
+
+**Einschränkungen:** `canPlay(card, top, color, pending, settings, restrict)` mit `restrictFor(p)` →
+`{frozen: Farbe (Eiszeit), curse: Farbe (Fluch)}`. Joker dürfen die eingefrorene Farbe nicht wählen.
+
+**Rundentakt** in `afterAction(turnChanged)`: `rollDirChaos`, `applySkips`, `tickPlayerCounters` (Halluzination, Fluch,
+Pakt – zählen beim **Verlassen** des eigenen Zugs runter, daher Pakt startet bei 6), `tickFreeze`, `tickBomb`,
+`maybeTableEvent`. Während `awaiting` (Spiegel) wird nichts getickt.
+
+**Hausregeln** (Lobby-Schalter): `stacking`, `zeroPass` (0 = Hände weiterreichen; den früheren 7er-Handtausch gibt es nicht mehr), `jumpIn`, `drawToMatch`, `acid`, `lottery`.
+
+**Punkte:** Zahl = Wert · Aktion/Säure/Lotterie = 20 · Joker/Chaos = 50 · DOOM = 100 · Karten der „nassen“ Farbe (Regen) doppelt. Punkteziel 0/200/300/500.
 
 **Einstellungen** (`DEFAULT_SETTINGS`): `theme (neon|winter|garden), maxPlayers (2–20, Standard 6; PLAYER_MIN/PLAYER_LIMIT), handSize, stacking, zeroPass, jumpIn, drawToMatch,
-scoreLimit, turnTime (0/15/30/60), botLevel (easy|normal|hard), chaos (0/5/10/20/35 %), acid (bool), doom (0/1/3 %)`.
+scoreLimit, turnTime (0/15/30/60), botLevel (easy|normal|hard), chaos (0/5/10/20/35 %), acid (bool), lottery (bool), doom (0/1/3 %),
+events (0 Aus / 1 Selten / 2 Oft – `EVENT_LEVELS`)`.
 Validierung in `sanitizeSettings()` (room.js) – neue Einstellungen dort UND in `DEFAULT_SETTINGS` UND in der Lobby (main.js `renderLobby`) eintragen.
 
 ### Chaos-Karten (`CHAOS`, Farbe `x`)
@@ -202,6 +227,11 @@ Spielbar immer im eigenen Zug, außer bei offenen Strafkarten. Verschwinden nach
 | `plus4All` | alle anderen +4 |
 | `dump2` | 2 zufällige eigene Karten weg (normale unter den Ziehstapel) |
 | `dirChaos` | 10 Züge lang nach jedem Zug 50 % Richtungswechsel (`game.dirChaos`, `rollDirChaos()`); läuft es schon → `dirChoice` `cancel`/`extend` (+10) |
+| `bomb` | Zeitbombe `g.bomb {holder, fuse 3–8, power 10}` wandert mit jedem Zug zum Nächsten; beim Knall zieht der Halter `power`. Zweite Bombe → `power += 10`. Zünder ist geheim, `danger` im View nur grob. |
+| `mirror` | Konter, nur spielbar bei offener Strafe (`pending > 0`) bzw. über den Spiegel-Dialog (siehe Angriffs-Warteschlange) |
+| `thief` | 1 zufällige Karte vom Ziel klauen (Ziel braucht ≥ 2 Karten) |
+| `xray` | 5 s die Hand des Ziels sehen (private Nachricht `xray`, Overlay `showXray()`) |
+| `freeze` | gewählte Farbe `2 × Spieler` Züge gesperrt (`g.frozen`, `tickFreeze()`, Event `thaw`) |
 
 ### DOOM-Karten (`DOOM`, Farbe `d`)
 Seltener als Chaos (`settings.doom` %, wird in `maybeChaos()` zuerst gewürfelt). Karten aus DOOM-Effekten sind **neu
@@ -211,7 +241,19 @@ erzeugt** (`room.hellCards(n)`, IDs ab 2 000 000) und kommen visuell aus dem **H
 |---|---|
 | `plus100` | Ziel bekommt 100 Höllenkarten |
 | `tornado` | wie Chaos-Tornado + 10 Höllenkarten pro Gegner, nur unter den anderen verteilt |
-| `hallu` | alle anderen: `player.hallu = 3` (zählt eigene Züge runter in `tickHallu()`); rein clientseitige Darstellung |
+| `hallu` | alle anderen: `player.hallu = 3` (zählt eigene Züge runter in `tickPlayerCounters()`); rein clientseitige Darstellung |
+| `pact` | Dämonenpakt: halbe Hand sofort ab; `player.pact` = 5 eigene Züge – wer bis dahin nicht gewinnt, bekommt 20 Höllenkarten (`pactDoom`) |
+| `meteor` | bis zu 3 zufällige Gegner bekommen je 5–15 Höllenkarten (über die Angriffs-Warteschlange → spiegelbar); Feuerbälle `spawnMeteor()` |
+| `curse` | Fluch: Ziel darf 5 eigene Züge nur seine schwächste Farbe spielen (`player.curse {color, turns}`), Joker gehen weiterhin |
+
+### Tisch-Ereignisse (`settings.events`, `maybeTableEvent()`, `triggerEvent(kind)`)
+Alle `EVENT_EVERY` (15) Züge würfelt der Server mit `EVENT_CHANCE[level]`, ob ein Ereignis kommt: halb Glücksrad,
+halb Theme-Ereignis (`THEME_EVENTS[theme]`).
+- **Glücksrad** (`WHEEL`): `allPlus1`, `reverse`, `passLeft` (jeder gibt eine Karte weiter), `swapNeighbors`, `underdog`
+  (meiste Karten wirft 3 ab). Client: `showWheel(index)` dreht das Rad auf das Ergebnis.
+- **Glatteis** (Winter, `g.ice`): die nächste gespielte Farbkarte rutscht in eine Nachbarfarbe (`iceSlide`).
+- **Stromausfall** (Neon, `g.blackoutUntil`, 10 s): Licht gedimmt (`board.setBlackout`), eigene Karten zeigen Rückseiten.
+- **Regen** (Garten, `g.wet`): eine Farbe zählt am Rundenende doppelt; Regen-Partikel + bläulicher Tint.
 
 ### Sicherheitsnetze
 - Ziehstapel leer und nichts zum Mischen → **frisches Deck** (`newDeck`, bis zu 5 zusätzliche Decks).

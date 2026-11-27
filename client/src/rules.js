@@ -1,6 +1,6 @@
 // Regel-Seite: Übersicht aller Karten mit Bildern.
 import { faceDataUrl } from './cards.js';
-import { CHAOS, DOOM } from '../../shared/rules.js';
+import { CHAOS, DOOM, WHEEL, THEME_EVENTS, EVENT_EVERY } from '../../shared/rules.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -34,7 +34,7 @@ export function rulesHtml(settings) {
       </div>
       <nav class="rules-nav">
         <a href="#r-basis">Grundregeln</a><a href="#r-aktion">Aktionskarten</a><a href="#r-joker">Joker</a>
-        <a href="#r-haus">Hausregeln</a><a href="#r-chaos">Chaos-Karten</a><a href="#r-doom" class="doom-link">☠ DOOM</a><a href="#r-punkte">Punkte</a>
+        <a href="#r-haus">Hausregeln</a><a href="#r-chaos">Chaos-Karten</a><a href="#r-doom" class="doom-link">☠ DOOM</a><a href="#r-events">Ereignisse</a><a href="#r-punkte">Punkte</a>
       </nav>
       <div class="rules-body">
 
@@ -55,6 +55,7 @@ export function rulesHtml(settings) {
           ${entry([{ color: 'y', kind: 'rev' }], 'Richtungswechsel', 'Die Spielrichtung dreht sich um. Bei 2 Spielern wirkt sie wie Aussetzen – du bist direkt nochmal dran.', '2× pro Farbe')}
           ${entry([{ color: 'g', kind: 'draw2' }], '+2', 'Der nächste Spieler zieht 2 Karten und setzt aus. Mit der Hausregel <i>Stapeln</i> darf er stattdessen eine +2 oder +4 drauflegen – dann zieht der Nächste die Summe.', '2× pro Farbe')}
           ${entry([{ color: 'b', kind: 'acid' }, { color: 'r', kind: 'acid' }], 'Säure', `Du wirfst <b>alle deine Karten dieser Farbe</b> mit ab. Die Säure bleibt oben liegen – als Nächstes muss dieselbe Farbe oder eine andere Säure kommen. ${status(settings, 'acid')}`, '1× pro Farbe')}
+          ${entry([{ color: 'y', kind: 'lottery' }, { color: 'g', kind: 'lottery' }], 'Lotterie', `Alle würfeln: Wer am niedrigsten würfelt, zieht <b>3 Karten</b>, wer am höchsten würfelt, wirft <b>1 Karte</b> ab (nie die letzte). Würfeln alle gleich, passiert nichts. ${status(settings, 'lottery')}`, '1× pro Farbe')}
         </section>
 
         <section id="r-joker">
@@ -99,11 +100,19 @@ export function rulesHtml(settings) {
           ${Object.entries(DOOM).map(([k, fx]) => entry([{ color: 'd', kind: 'doom', effect: k }], fx.name.includes(fx.icon) ? esc(fx.name) : `${esc(fx.icon)} ${esc(fx.name)}`, esc(fx.desc), fx.target ? 'Ziel wählen' : '')).join('')}
         </section>
 
+        <section id="r-events">
+          <h3>🎡 Tisch-Ereignisse ${settings ? `<span class="rule-state ${settings.events ? 'on' : 'off'}">${['in diesem Raum aus', 'in diesem Raum selten', 'in diesem Raum oft'][settings.events ?? 0]}</span>` : ''}</h3>
+          <p class="rules-intro">Alle ${EVENT_EVERY} Züge kann ohne Karte ein Ereignis passieren (Chance: selten 35 %, oft 75 %) – das Glücksrad oder das Ereignis des Tisches.</p>
+          <article class="rule-card"><div class="rule-text"><h4>🎡 Glücksrad</h4>
+            <p>${WHEEL.map((w) => `<b>${esc(w.label)}:</b> ${esc(w.desc)}`).join('<br>')}</p></div></article>
+          ${Object.entries(THEME_EVENTS).map(([theme, ev]) => `<article class="rule-card"><div class="rule-text"><h4>${esc(ev.icon)} ${esc(ev.name)} <span class="rule-meta">${{ neon: 'Neon-Arena', winter: 'Winter', garden: 'Garten' }[theme]}</span></h4><p>${esc(ev.desc)}</p></div></article>`).join('')}
+        </section>
+
         <section id="r-punkte">
           <h3>Punkte &amp; Rundenende</h3>
           <ul>
             <li>Der Gewinner einer Runde bekommt die Werte aller Restkarten der anderen.</li>
-            <li>Zahlenkarten: ihr Wert · Aussetzen, Richtungswechsel, +2, Säure: je <b>20</b> · Joker und Chaos-Karten: je <b>50</b> · DOOM-Karten: <b>100</b>.</li>
+            <li>Zahlenkarten: ihr Wert · Aussetzen, Richtungswechsel, +2, Säure, Lotterie: je <b>20</b> · Joker und Chaos-Karten: je <b>50</b> · DOOM-Karten: <b>100</b>. Bei Regen zählen nasse Karten doppelt.</li>
             <li>Wer das Punkteziel (200 / 300 / 500) erreicht, gewinnt das Spiel. „Aus“ = endlos weiterspielen.</li>
             <li>Notbremsen bei viel Chaos: Sind alle Karten verteilt, kommt ein frisches Deck ins Spiel. Nach 2000 Zügen gewinnt, wer die wenigsten Karten hat.</li>
           </ul>
