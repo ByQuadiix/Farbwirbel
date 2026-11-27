@@ -298,8 +298,15 @@ export class Board {
     }
     this.center.visible = true;
     this.pile.visible = true;
-    const dealt = events.some((e) => e.type === 'deal') || this.round !== g.round;
+    // Echtes Austeilen (Rundenstart) animieren; nach Neuladen/Wiederverbinden Karten sofort hinlegen
+    const realDeal = events.some((e) => e.type === 'deal');
+    const resync = !realDeal && this.round !== g.round;
+    const dealt = realDeal || resync;
     if (dealt) { this.clearAll(); this.round = g.round; }
+    // Zeitabstand zwischen Karten so wählen, dass die ganze Animation höchstens `total` Sekunden dauert
+    const step = (count, maxStep, total) => Math.min(maxStep, total / Math.max(1, count));
+    const dealCards = Math.max(view.hand.length, ...view.players.filter((p) => p.id !== view.me).map((p) => Math.min(p.count, MAX_FAN)));
+    const dealStep = step(dealCards * (view.players.length || 1), 0.07, 1.4);
     this.layoutSeats();
     this.setPileCount(g.drawCount);
     this.setColor(g.color);
@@ -354,7 +361,8 @@ export class Board {
         m.userData.orbit = null;
         m.userData.speed = 7.5;
         m.userData.dim = 1;
-        m.userData.delay = acidOrder.has(c.id) ? acidOrder.get(c.id) * 0.08 : 0;
+        m.userData.delay = acidOrder.has(c.id) ? acidOrder.get(c.id) * step(acidOrder.size, 0.08, 0.8) : 0;
+        m.userData.snap = resync;
         m.userData.dieAt = 0;
         this.discard.set(c.id, m);
         if (plays.has(c.id)) this.pulse = 1;
@@ -427,14 +435,16 @@ export class Board {
       this.flyAway(m, seat ? seat.group.position.clone().setY(1) : undefined);
     }
     const sorted = sortHand(view.hand);
+    const newCount = sorted.filter((c) => !this.hand.has(c.id)).length;
+    const drawStep = step(newCount, 0.1, 0.8); // alle neuen Karten in max. ~0,8 s auf den Weg
     let j = 0;
     for (const c of sorted) {
       if (this.hand.has(c.id)) continue;
       const p = source();
       const m = this.spawn(c, p.pos, p.quat, this.handGroup);
-      m.userData.speed = 7;
-      m.userData.delay = dealt ? (j * nSeats) * 0.07 : fromPortal ? 0.8 + Math.min(j * 0.03, 2.6) : Math.min(j * 0.12, 2);
-      if (fromPortal) m.userData.speed = 5;
+      m.userData.speed = fromPortal ? 7 : 9;
+      m.userData.delay = resync ? 0 : realDeal ? j * nSeats * dealStep : fromPortal ? 0.6 + j * step(newCount, 0.03, 1.2) : j * drawStep;
+      m.userData.snap = resync;
       this.hand.set(c.id, m);
       j++;
     }
@@ -446,16 +456,18 @@ export class Board {
       const want = Math.min(p.count, MAX_FAN);
       let k = 0;
       const grew = p.count > (seat.lastCount ?? 0);
+      const oppStep = step(want - seat.meshes.length, 0.1, 0.7);
       while (seat.meshes.length < want) {
         let m;
         if (grew || dealt) {
           const pp = source();
           m = this.spawn(null, pp.pos, pp.quat, seat.group);
-          m.userData.delay = dealt ? (k * nSeats + seatOrder.get(p.id)) * 0.07 : fromPortal ? 0.8 + k * 0.1 : k * 0.12;
+          m.userData.delay = resync ? 0 : realDeal ? (k * nSeats + seatOrder.get(p.id)) * dealStep : fromPortal ? 0.6 + k * oppStep : k * oppStep;
         } else {
           m = this.spawn(null, seat.group.position.clone().setY(0.5), seat.group.quaternion, seat.group);
         }
-        m.userData.speed = 7;
+        m.userData.speed = 9;
+        m.userData.snap = resync;
         seat.meshes.push(m);
         k++;
       }
@@ -517,17 +529,20 @@ export class Board {
       // Fehlende Karten: beim Höllen-Tornado steigen sie aus dem Portal in den Wirbel
       const p = doom ? this.portalPose() : this.pileTopWorld();
       const nm = this.spawn(null, p.pos, p.quat, this.scene);
-      this.toOrbit(nm, now + (doom ? 0.4 + fromHell++ * 0.03 : 0), end);
+      this.toOrbit(nm, now + (doom ? 0.4 + Math.min(fromHell++ * 0.03, 1.2) : 0), end);
       return nm;
     };
     let i = 0;
     const sorted = sortHand(view.hand);
+    // Karten landen nacheinander, aber insgesamt in höchstens ~1 s
+    const landing = sorted.length + others.reduce((s, p) => s + Math.min(p.count, MAX_FAN), 0);
+    const rel = Math.min(0.035, 1.0 / Math.max(1, landing));
     for (const c of sorted) {
       const m = take();
       setCardFace(m, c);
       m.visible = true; // kann vorher eine (bei Halluzination unsichtbare) Gegnerkarte gewesen sein
       m.userData.dest = this.handGroup;
-      m.userData.orbit.until = end + i * 0.035;
+      m.userData.orbit.until = end + i * rel;
       this.hand.set(c.id, m);
       i++;
     }
@@ -540,7 +555,7 @@ export class Board {
         setCardFace(m, null);
         m.visible = !this.halluOn; // Halluzinierende sehen statt Gegnerkarten die Früchte im Wirbel
         m.userData.dest = seat.group;
-        m.userData.orbit.until = end + i * 0.035;
+        m.userData.orbit.until = end + i * rel;
         seat.meshes.push(m);
         i++;
       }
@@ -1054,6 +1069,13 @@ export class Board {
         u.speed = 6;
       }
       if (u.delay > 0) { u.delay -= dt; continue; }
+      if (u.snap) {
+        // Nach Neuladen: direkt an den Platz, ohne Flug
+        u.snap = false;
+        m.position.copy(u.tp);
+        m.quaternion.copy(u.tq);
+        m.scale.setScalar(u.ts);
+      }
       // Selbstheilung, falls ein Wert ungültig wurde
       if (Number.isNaN(m.position.x) || Number.isNaN(m.position.y)) m.position.copy(u.tp);
       if (Number.isNaN(m.quaternion.x)) m.quaternion.copy(u.tq);
