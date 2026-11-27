@@ -247,6 +247,16 @@ erzeugt** (`room.hellCards(n)`, IDs ab 2 000 000) und kommen visuell aus dem **H
 - **Portal:** `buildPortal()` (lazy), `openPortal(sec)`, `updatePortal()` (Skalierung, Drehung, Licht, `fx.portalFire`).
 - **Halluzination:** `makeSillyStuff()` (Ente, Pizza, Banane, Fisch, Donut) ersetzt Gegnerfächer (Fächer-Meshes `visible=false`).
 - Selbstheilung: NaN-Positionen werden auf Zielpose gesetzt (passierte, wenn Seite in unsichtbarem Fenster lud).
+- **Eigene Hand / Kartenauswahl** (`layoutHand()`, `layoutRow()`, `pickHand()`):
+  - Bei eigenem Zug und > 12 Karten: vordere Reihe = spielbare Karten, hintere Reihe (kleiner, gedimmt) = Rest.
+    `handRows[0]` vorne, `handRows[1]` hinten. `main.js` setzt dann `body.hand-tall` (Banner/Tipps/Dialoge höher).
+  - **Fischaugen-Lupe** (Sarkar-Brown) pro Reihe: Fixpunkt = Mauszeiger (`handPointer {row, x}`) bzw. per Tastatur
+    gewählte Karte; Stärke so, dass die Karte am Zeiger ~95 % sichtbar ist. Gehoverte Karte bekommt z = 1.4 (ganz vorn).
+  - **Auswahl nach Position** statt Raycast: Zeiger → Punkt in der Ebene der `handGroup` (`handLocalPoint`), Index =
+    `floor((x - A) / s)` im unverzerrten Layout. Weil der Zeiger Fixpunkt der Verzerrung ist, entspricht das exakt der
+    sichtbaren Karte → kein Flackern. Ziehstapel weiter per Raycast (`pickPile`).
+  - Eingaben: Maus, Mausrad (`onWheel` → `moveHover`), Tastatur in `main.js` (←/→ Karte, ↑/↓ Reihe, Enter spielen),
+    Touch: erster Tipp wählt aus (`hoverBeforeDown`), zweiter Tipp auf dieselbe Karte spielt.
 
 ### Weitere
 - `stage.js`: Kamera je nach Seitenverhältnis (Hochformat höher/weiter). Updater bekommen `raw`-dt (max 0,5 s), Themes max 0,05 s.
@@ -326,6 +336,7 @@ Karten in `validDebugCard()` (index.js). Lokal: `$env:FW_DEBUG='1'; npm start`. 
 8. Früchte fliegen bei Halluzination mit in den Tornado.
 9. Docker-Container lokal gebaut und getestet, Image als `.tar.gz` exportiert.
 10. Projektübergabe: CLAUDE.md, Git-Repo auf GitHub (zuerst „3D-Uno“, vom Nutzer umbenannt in „Farbwirbel“).
+11. Kartenauswahl bei großen Händen überarbeitet (Lupe, spielbare Karten vorne, Auswahl nach Position, Tastatur/Mausrad/Touch).
 
 ## 14. Mögliche nächste Schritte (nicht beauftragt)
 - Hochformat/Handy weiter optimieren (Sitzplätze eng bei 5–6 Spielern).

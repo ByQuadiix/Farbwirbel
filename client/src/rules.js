@@ -108,7 +108,14 @@ export function rulesHtml(settings) {
             <li>Notbremsen bei viel Chaos: Sind alle Karten verteilt, kommt ein frisches Deck ins Spiel. Nach 2000 Zügen gewinnt, wer die wenigsten Karten hat.</li>
           </ul>
           <h3>Tastatur</h3>
-          <p><kbd>Leertaste</kbd> / <kbd>D</kbd> Karte ziehen · <kbd>L</kbd> Letzte Karte! · <kbd>Esc</kbd> Auswahl abbrechen / Fenster schließen</p>
+          <p><kbd>←</kbd> / <kbd>→</kbd> oder Mausrad: Karte auswählen · <kbd>↑</kbd> / <kbd>↓</kbd> Reihe wechseln (bei großer Hand) · <kbd>Enter</kbd> ausgewählte Karte spielen<br>
+          <kbd>Leertaste</kbd> / <kbd>D</kbd> Karte ziehen · <kbd>L</kbd> Letzte Karte! · <kbd>Esc</kbd> Auswahl abbrechen / Fenster schließen</p>
+          <h3>Große Hand</h3>
+          <ul>
+            <li>Die Karte unter dem Mauszeiger und ihre Nachbarn rücken auseinander (Lupe) – so bleibt auch bei 50+ Karten jede Karte auswählbar.</li>
+            <li>Bist du dran und hast mehr als 12 Karten, stehen die <b>spielbaren Karten vorne</b> in einer eigenen Reihe, der Rest kompakt dahinter.</li>
+            <li>Auf dem Handy: erster Tipp wählt die Karte aus, zweiter Tipp spielt sie.</li>
+          </ul>
         </section>
       </div>
     </div>

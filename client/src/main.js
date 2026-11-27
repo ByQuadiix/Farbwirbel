@@ -314,6 +314,14 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && state.pick) { state.pick = null; render(); }
   if (e.key === ' ' || e.key.toLowerCase() === 'd') { e.preventDefault(); onPileClick(); }
   if (e.key.toLowerCase() === 'l') net.send({ t: 'callLast' });
+  // Karten per Tastatur auswählen: ←/→ Karte, ↑/↓ Reihe (bei großer Hand), Enter spielen
+  if (state.pick || e.target.closest?.('button, [role="button"]')) return;
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); board.moveHover(e.key === 'ArrowRight' ? 1 : -1); }
+  if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { e.preventDefault(); board.moveHoverRow(e.key === 'ArrowUp' ? 1 : -1); }
+  if (e.key === 'Enter') {
+    const card = board.hoveredCard();
+    if (card) { e.preventDefault(); onCardClick(card); }
+  }
 });
 
 async function copyLink() {
@@ -634,6 +642,8 @@ function renderHud(v) {
     myTurn,
     canDraw: myTurn && !awaiting && !state.pick,
   });
+  // Zweite Kartenreihe (große Hand) → Banner, Hinweise und Dialoge weiter nach oben
+  document.body.classList.toggle('hand-tall', (board.handRows?.length ?? 0) > 1);
 }
 
 function renderModal(v) {

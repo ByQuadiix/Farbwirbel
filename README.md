@@ -27,7 +27,10 @@ Ein einziger Docker-Container: Node.js liefert die Webseite aus und betreibt den
   Gehen alle Karten aus, kommt ein frisches Deck ins Spiel; nach 2000 Zügen endet eine Runde automatisch.
 - Punktezählung mit Punkteziel, optionaler Zug-Timer
 - Reconnect: Seite neu laden → man landet wieder auf seinem Platz; bei Verbindungsabbruch spielt kurz ein Bot weiter
-- Emotes, synthetische Soundeffekte (keine Audiodateien), Tastatur: `Leertaste`/`D` = ziehen, `L` = Letzte Karte
+- Emotes, synthetische Soundeffekte (keine Audiodateien), Tastatur: `Leertaste`/`D` = ziehen, `L` = Letzte Karte,
+  `←`/`→` bzw. Mausrad = Karte wählen, `↑`/`↓` = Reihe wechseln, `Enter` = spielen
+- Große Hände (50, 100+ Karten): Lupen-Effekt um den Mauszeiger, spielbare Karten in eigener Reihe vorne,
+  auf dem Handy erst antippen, dann nochmal tippen zum Spielen
 
 ## Auf Unraid installieren
 

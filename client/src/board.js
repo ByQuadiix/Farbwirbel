@@ -143,9 +143,10 @@ export class Board {
     this.ndc = new THREE.Vector2();
     const el = stage.renderer.domElement;
     el.addEventListener('pointermove', (e) => this.onPointerMove(e));
-    el.addEventListener('pointerdown', (e) => { this.downAt = { x: e.clientX, y: e.clientY }; this.onPointerMove(e); });
+    el.addEventListener('pointerdown', (e) => this.onPointerDown(e));
     el.addEventListener('pointerup', (e) => this.onPointerUp(e));
-    el.addEventListener('pointerleave', () => this.setHover(null));
+    el.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') { this.handPointer = null; this.setHover(null); } });
+    el.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
 
     stage.updaters.push((dt, t) => this.update(dt, t));
     stage.resizers.push(() => { if (this.view) { this.layoutSeats(); this.layoutHand(); } });
@@ -822,6 +823,14 @@ export class Board {
     });
   }
 
+  // ---------- Eigene Hand: Layout ----------
+  //
+  // Große Hände: Bei vielen Karten (eigener Zug, > 12 Karten) kommen die spielbaren Karten in eine
+  // eigene vordere Reihe, der Rest kompakt in eine Reihe dahinter. Jede Reihe nutzt eine Fischaugen-
+  // Verzerrung (Sarkar-Brown) um den Mauszeiger: Karten nahe am Zeiger rücken auseinander, so dass
+  // die ausgewählte Karte und ihre Nachbarn gut sichtbar sind. Der Zeiger ist Fixpunkt der Verzerrung,
+  // deshalb bleibt die Karte unter dem Zeiger stabil (kein Hin- und Herspringen).
+
   layoutHand() {
     const d = 7;
     const { w, h } = this.stage.visibleWidthAt(d);
@@ -830,24 +839,119 @@ export class Board {
     this.handGroup.position.set(0, -h / 2 + CARD_H * 0.5 * scale + 0.1, -d);
     const n = this.handOrder.length;
     const maxW = (w * 0.7) / scale - CARD_W; // rechts Platz für die Aktions-Buttons
-    const spacing = n > 1 ? Math.min(0.8, maxW / (n - 1)) : 0;
     const highlight = this.myTurn || this.playable.size > 0;
-    this.handOrder.forEach((id, i) => {
+    const split = highlight && n > 12 && this.playable.size > 0 && this.playable.size < n;
+    const front = split ? this.handOrder.filter((id) => this.playable.has(id)) : this.handOrder;
+    const back = split ? this.handOrder.filter((id) => !this.playable.has(id)) : [];
+    this.handRows = [this.layoutRow(front, 0, maxW, { y: 0, z: 0, rs: 1, highlight, lift: !split })];
+    if (back.length) this.handRows.push(this.layoutRow(back, 1, maxW, { y: CARD_H * 0.6, z: -0.9, rs: 0.82, highlight, lift: false }));
+  }
+
+  layoutRow(ids, rowIdx, maxW, { y, z, rs, highlight, lift }) {
+    const n = ids.length;
+    const W = CARD_W * rs;
+    const s = n > 1 ? Math.min(0.8 * rs, maxW / (n - 1)) : 0; // gleichmäßiger Abstand ohne Lupe
+    const A = -((n - 1) * s + W) / 2; // linke Kante der ersten Karte
+    const B = A + n * s; // Ende des Verzerrungsbereichs
+    // Fixpunkt der Lupe: Mauszeiger in dieser Reihe, sonst die per Tastatur gewählte Karte
+    const hi = ids.indexOf(this.hovered);
+    let p = null;
+    if (this.handPointer?.row === rowIdx) p = Math.max(A, Math.min(B, this.handPointer.x));
+    else if (hi >= 0) p = A + hi * s + s / 2;
+    // Stärke so, dass die Karte am Zeiger fast ganz sichtbar ist
+    const dist = p != null && s > 0 && s < 0.9 * W ? Math.min(60, (0.95 * W) / s - 1) : 0;
+    const F = (x) => {
+      if (!dist) return x;
+      if (x >= p) {
+        const R = B - p;
+        if (R < 1e-6) return x;
+        const t = (x - p) / R;
+        return p + (R * (dist + 1) * t) / (dist * t + 1);
+      }
+      const L = p - A;
+      if (L < 1e-6) return x;
+      const t = (p - x) / L;
+      return p - (L * (dist + 1) * t) / (dist * t + 1);
+    };
+    ids.forEach((id, i) => {
       const m = this.hand.get(id);
       if (!m) return;
-      const c = i - (n - 1) / 2;
-      const x = c * spacing;
-      let y = -x * x * 0.018;
-      let z = i * 0.006;
+      const x = F(A + i * s) + W / 2;
       const playable = this.playable.has(id);
-      if (highlight && playable) y += 0.16;
-      if (highlight && !playable) y -= 0.08;
-      if (this.hovered === id) { y += 0.32; z += 0.25; }
-      m.userData.tp.set(x, y, z);
+      const hov = this.hovered === id;
+      let yy = y - x * x * 0.018 * rs;
+      let zz = z + i * 0.006;
+      if (lift && highlight && playable) yy += 0.16;
+      if (highlight && !playable) yy -= 0.08;
+      if (hov) { yy += 0.32 * rs; zz = 1.4; } // ausgewählte Karte ganz nach vorn
+      m.userData.tp.set(x, yy, zz);
       m.userData.tq.setFromEuler(new THREE.Euler(0, 0, -x * 0.035));
-      m.userData.ts = this.hovered === id ? 1.08 : 1;
+      m.userData.ts = rs * (hov ? 1.1 : 1);
       m.userData.dim = highlight && !playable ? 0.32 : 1;
     });
+    return { ids, A, s, W, y, rs, n };
+  }
+
+  /** Mauszeiger → Punkt in der Ebene der eigenen Hand (lokale Koordinaten der handGroup). */
+  handLocalPoint(e) {
+    const rect = this.stage.renderer.domElement.getBoundingClientRect();
+    this.ndc.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+    this.raycaster.setFromCamera(this.ndc, this.camera);
+    this.handGroup.updateWorldMatrix(true, false);
+    const normal = new THREE.Vector3(0, 0, 1).transformDirection(this.handGroup.matrixWorld);
+    const origin = new THREE.Vector3().setFromMatrixPosition(this.handGroup.matrixWorld);
+    const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(normal, origin);
+    const hit = this.raycaster.ray.intersectPlane(plane, new THREE.Vector3());
+    return hit ? this.handGroup.worldToLocal(hit) : null;
+  }
+
+  /**
+   * Welche Handkarte liegt unter dem Zeiger? Bestimmt über die Position entlang der Reihe (nicht über
+   * die oberste Karte). Weil der Zeiger Fixpunkt der Lupe ist, entspricht das genau der sichtbaren Karte.
+   */
+  pickHand(e) {
+    if (!this.handRows?.length || !this.hand.size) return null;
+    const pt = this.handLocalPoint(e);
+    if (!pt) return null;
+    const [front, back] = this.handRows;
+    const frontTop = back ? CARD_H / 2 + 0.03 : CARD_H / 2 + 0.45;
+    let row = null;
+    let rowIdx = 0;
+    if (pt.y >= -CARD_H / 2 - 0.15 && pt.y <= frontTop) row = front;
+    else if (back && pt.y > frontTop && pt.y <= back.y + (CARD_H * back.rs) / 2 + 0.4) { row = back; rowIdx = 1; }
+    if (!row || !row.n) return null;
+    const { A, s, W, n } = row;
+    if (pt.x < A - 0.05 || pt.x > A + (n - 1) * s + W + 0.05) return null;
+    let i = s > 0 ? Math.floor((pt.x - A) / s) : 0;
+    i = Math.max(0, Math.min(n - 1, i));
+    return { id: row.ids[i], row: rowIdx, x: pt.x };
+  }
+
+  /** Auswahl per Tastatur/Mausrad verschieben (dir = ±1). */
+  moveHover(dir) {
+    const rows = this.handRows ?? [];
+    let r = rows.findIndex((row) => row.ids.includes(this.hovered));
+    if (r < 0) r = 0;
+    const ids = rows[r]?.ids ?? [];
+    if (!ids.length) return;
+    const cur = ids.indexOf(this.hovered);
+    const next = cur < 0 ? (dir > 0 ? 0 : ids.length - 1) : Math.max(0, Math.min(ids.length - 1, cur + dir));
+    this.handPointer = null;
+    this.setHover(ids[next]);
+  }
+
+  /** Zwischen vorderer (spielbar) und hinterer Reihe wechseln (dir: -1 = vorne, +1 = hinten). */
+  moveHoverRow(dir) {
+    const rows = this.handRows ?? [];
+    if (rows.length < 2) return;
+    const target = rows[dir > 0 ? 1 : 0];
+    if (!target.ids.length || target.ids.includes(this.hovered)) return;
+    this.handPointer = null;
+    this.setHover(target.ids[Math.floor(target.ids.length / 2)]);
+  }
+
+  hoveredCard() {
+    return this.hovered != null ? this.hand.get(this.hovered)?.userData.card ?? null : null;
   }
 
   /** Wird vom UI gesetzt. */
@@ -871,41 +975,65 @@ export class Board {
 
   // ---------- Eingabe ----------
 
-  pick(e) {
+  /** Ziehstapel per Raycast. */
+  pickPile(e) {
+    if (!this.pile.visible) return false;
     const rect = this.stage.renderer.domElement.getBoundingClientRect();
     this.ndc.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
     this.raycaster.setFromCamera(this.ndc, this.camera);
-    const targets = [];
-    for (const m of this.hand.values()) targets.push(m.userData.front);
-    if (this.pile.visible) targets.push(this.pileTop, this.pileBox);
-    const hit = this.raycaster.intersectObjects(targets, false)[0];
-    if (!hit) return null;
-    if (hit.object === this.pileTop || hit.object === this.pileBox) return { pile: true };
-    const card = hit.object.userData.cardGroup?.userData.card;
-    return card ? { card } : null;
+    return this.raycaster.intersectObjects([this.pileTop, this.pileBox], false).length > 0;
+  }
+
+  pick(e) {
+    const h = this.pickHand(e);
+    if (h) return { card: this.hand.get(h.id)?.userData.card, hand: h };
+    return this.pickPile(e) ? { pile: true } : null;
   }
 
   setHover(id) {
-    if (this.hovered === id) return;
+    const changed = this.hovered !== id;
     this.hovered = id;
-    this.layoutHand();
-    this.handlers.onHover?.(id != null ? this.hand.get(id)?.userData.card ?? null : null);
+    this.layoutHand(); // auch ohne Wechsel: Lupe folgt dem Zeiger
+    if (changed) this.handlers.onHover?.(id != null ? this.hand.get(id)?.userData.card ?? null : null);
   }
 
   onPointerMove(e) {
     const hit = this.pick(e);
-    this.setHover(hit?.card?.id ?? null);
+    this.handPointer = hit?.hand ? { row: hit.hand.row, x: hit.hand.x } : null;
+    this.setHover(hit?.hand?.id ?? null);
     this.pileHover = !!hit?.pile;
     this.stage.renderer.domElement.style.cursor = hit && (hit.pile ? this.canDraw : true) ? 'pointer' : 'default';
+  }
+
+  onPointerDown(e) {
+    this.downAt = { x: e.clientX, y: e.clientY };
+    this.hoverBeforeDown = this.hovered;
+    if (e.pointerType === 'mouse') this.onPointerMove(e);
   }
 
   onPointerUp(e) {
     if (this.downAt && Math.hypot(e.clientX - this.downAt.x, e.clientY - this.downAt.y) > 12) return;
     const hit = this.pick(e);
-    if (!hit) return;
-    if (hit.pile) this.handlers.onPileClick?.();
-    else this.handlers.onCardClick?.(hit.card);
-    if (e.pointerType !== 'mouse') this.setHover(null);
+    if (!hit) {
+      if (e.pointerType !== 'mouse') this.setHover(null);
+      return;
+    }
+    if (hit.pile) { this.handlers.onPileClick?.(); return; }
+    // Touch: erster Tipp wählt aus (Karte hebt sich), zweiter Tipp auf dieselbe Karte spielt sie
+    if (e.pointerType !== 'mouse' && this.hoverBeforeDown !== hit.hand.id) {
+      this.handPointer = { row: hit.hand.row, x: hit.hand.x };
+      this.setHover(hit.hand.id);
+      return;
+    }
+    if (hit.card) this.handlers.onCardClick?.(hit.card);
+    if (e.pointerType !== 'mouse') { this.handPointer = null; this.setHover(null); }
+  }
+
+  onWheel(e) {
+    if (!this.handPointer && this.hovered == null) return;
+    if (!this.pickHand(e)) return;
+    e.preventDefault();
+    this.moveHover(e.deltaY > 0 || e.deltaX > 0 ? 1 : -1);
   }
 
   // ---------- Animation ----------
