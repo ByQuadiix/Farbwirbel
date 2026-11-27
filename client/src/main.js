@@ -9,7 +9,7 @@ import { Net, store } from './net.js';
 import { sfx, isMuted, setMuted } from './audio.js';
 import { initCards, faceDataUrl } from './cards.js';
 import { rulesHtml } from './rules.js';
-import { COLORS, COLOR_NAMES, COLOR_HEX, MAX_PLAYERS, CHAOS, CHAOS_LEVELS, DOOM, DOOM_LEVELS, specialInfo } from '../../shared/rules.js';
+import { COLORS, COLOR_NAMES, COLOR_HEX, PLAYER_LIMIT, PLAYER_MIN, AVATARS, CHAOS, CHAOS_LEVELS, DOOM, DOOM_LEVELS, specialInfo } from '../../shared/rules.js';
 
 // Halluzinationen: Quatsch statt echter Infos
 const SILLY_NAMES = ['Herr Toast', 'Karl der Löffel', 'Frau Gurke', 'Sir Quietschi', 'Der Kühlschrank', 'Tante Pudding', 'Bernd Brot', 'Lord Socke', 'Kaktus-Klaus', 'Pommes-Paula', 'Der Mond', 'Wackelpeter', 'Oma Turbo', 'Käpt’n Keks'];
@@ -17,7 +17,6 @@ const SILLY_COUNTS = ['🍌×7', '∞', '-3', 'Dienstag', 'ja', 'zu viele', '�
 const SILLY_AVATARS = ['🦆', '🍕', '🍌', '🐟', '🍩', '🌭', '🥒', '🧀', '🦄', '👽', '🧦', '🍄', '🥨', '🐙', '🎺', '🪿'];
 const rndOf = (a) => a[Math.floor(Math.random() * a.length)];
 
-const AVATARS = ['🦊', '🐻', '🐼', '🐧', '🐸', '🦉', '🐱', '🐶', '🦁', '🐨', '🐙', '🦄', '🐯', '🐰', '🤖', '👾'];
 const EMOTES = ['👍', '😂', '😱', '😡', '🎉', '🙏'];
 const THEMES = [['neon', 'Neon-Arena'], ['winter', 'Winter'], ['garden', 'Garten']];
 
@@ -220,6 +219,8 @@ ui.addEventListener('click', (e) => {
     }
     case 'copy': return copyLink();
     case 'addBot': sfx('pop'); return net.send({ t: 'addBot' });
+    case 'fillBots': sfx('pop'); return net.send({ t: 'fillBots' });
+    case 'clearBots': sfx('click'); return net.send({ t: 'clearBots' });
     case 'removeBot': return net.send({ t: 'removeBot', id: Number(b.dataset.id) });
     case 'set': {
       let val = b.dataset.val;
@@ -465,11 +466,9 @@ function toggle(key, value, title, desc, enabled) {
 function renderLobby(v) {
   const isHost = v.hostId === v.me;
   const s = v.settings;
-  const slots = [];
-  for (let i = 0; i < MAX_PLAYERS; i++) {
-    const p = v.players[i];
-    if (p) {
-      slots.push(`<li class="slot">
+  const max = s.maxPlayers;
+  const free = Math.max(0, max - v.players.length);
+  const slots = v.players.map((p) => `<li class="slot">
         <span class="av">${p.avatar}</span>
         <span class="nm">${esc(p.name)}</span>
         ${p.id === v.hostId ? '<span class="badge host">Host</span>' : ''}
@@ -478,10 +477,15 @@ function renderLobby(v) {
         ${!p.connected ? '<span class="badge off">offline</span>' : ''}
         ${isHost && p.isBot ? `<button class="icon-btn small" data-act="removeBot" data-id="${p.id}" title="Bot entfernen" aria-label="Bot ${esc(p.name)} entfernen">✕</button>` : ''}
       </li>`);
-    } else {
-      slots.push(`<li class="slot empty">${isHost && i === v.players.length ? '<button class="btn ghost" data-act="addBot">+ Bot hinzufügen</button>' : '<span>frei</span>'}</li>`);
-    }
+  // Freie Plätze nicht einzeln auflisten (bei 20 Plätzen zu lang) – eine Zeile mit Aktionen
+  if (free > 0) {
+    slots.push(`<li class="slot empty">
+      <span>${free} ${free === 1 ? 'Platz' : 'Plätze'} frei</span>
+      ${isHost ? `<button class="btn ghost small" data-act="addBot">+ Bot</button>${free > 1 ? `<button class="btn ghost small" data-act="fillBots">Alle mit Bots füllen</button>` : ''}` : ''}
+    </li>`);
   }
+  const botCount = v.players.filter((p) => p.isBot).length;
+  const stepBtn = (val, label, aria) => `<button data-act="set" data-key="maxPlayers" data-val="${val}" aria-label="${aria}" ${isHost && val >= Math.max(PLAYER_MIN, v.players.length) && val <= PLAYER_LIMIT ? '' : 'disabled'}>${label}</button>`;
   $('screen').innerHTML = `
     <div class="lobby">
       <div class="lobby-head">
@@ -494,12 +498,20 @@ function renderLobby(v) {
       </div>
       <div class="lobby-grid">
         <section class="panel">
-          <h2>Spieler <small>${v.players.length}/${MAX_PLAYERS}</small></h2>
+          <h2>Spieler <small>${v.players.length}/${max}</small></h2>
           <ul class="slots">${slots.join('')}</ul>
+          ${isHost && botCount > 1 ? '<button class="btn ghost small clear-bots" data-act="clearBots">Alle Bots entfernen</button>' : ''}
           <p class="hint">Teile den Code oder Link mit Freunden im selben Netzwerk. Leere Plätze kannst du mit Bots füllen.</p>
         </section>
         <section class="panel settings">
           <h2>Einstellungen ${isHost ? '' : '<small>(nur Host)</small>'}</h2>
+          <div class="set"><span>Spielerplätze</span>
+            <div class="stepper">
+              ${stepBtn(max - 1, '−', 'Einen Platz weniger')}
+              <b>${max}</b>
+              ${stepBtn(max + 1, '+', 'Einen Platz mehr')}
+            </div>
+          </div>
           <div class="set"><span>Tisch</span>${seg('theme', s.theme, THEMES, isHost)}</div>
           <div class="set"><span>Bot-Stärke</span>${seg('botLevel', s.botLevel, [['easy', 'Leicht'], ['normal', 'Normal'], ['hard', 'Schwer']], isHost)}</div>
           <div class="set"><span>Startkarten</span>${seg('handSize', s.handSize, [[5, '5'], [7, '7'], [10, '10']], isHost)}</div>
@@ -643,6 +655,10 @@ function renderHud(v) {
   });
   // Zweite Kartenreihe (große Hand) → Banner, Hinweise und Dialoge weiter nach oben
   document.body.classList.toggle('hand-tall', (board.handRows?.length ?? 0) > 1);
+  // Viele Gegner → kompaktere Namensschilder
+  const opp = v.players.length - 1;
+  document.body.classList.toggle('seats-many', opp > 6);
+  document.body.classList.toggle('seats-crowded', opp > 11);
 }
 
 function renderModal(v) {

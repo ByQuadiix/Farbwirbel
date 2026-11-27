@@ -28,10 +28,11 @@ let acidDumped = 0;
 let rounds = 0;
 let actions = 0;
 for (const v of variants) {
-  for (const n of [2, 3, 4, 6]) {
-    for (let r = 0; r < 40; r++) {
+  for (const n of [2, 3, 4, 6, 10, 20]) {
+    for (let r = 0; r < (n > 6 ? 8 : 40); r++) {
       const room = new Room('TEST');
       room.schedule = () => {}; // keine Timer im Test
+      room.settings.maxPlayers = 20;
       for (let i = 0; i < n; i++) room.addBot();
       room.hostId = room.players[0].id;
       room.settings = { ...room.settings, ...v, botLevel: ['easy', 'normal', 'hard'][r % 3] };

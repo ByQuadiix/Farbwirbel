@@ -6,7 +6,7 @@ Ein einziger Docker-Container: Node.js liefert die Webseite aus und betreibt den
 ## Features
 
 - 3D-Tisch mit Three.js, drei Themes: **Neon-Arena**, **Winter**, **Garten**
-- 2–6 Spieler, leere Plätze mit Bots (leicht / normal / schwer) auffüllen
+- 2–20 Spieler (Plätze in der Lobby einstellbar, Standard 6), leere Plätze mit Bots (leicht / normal / schwer) auffüllen
 - „Schnelles Spiel“ startet sofort gegen 3 Bots
 - Offizielle Grundregeln inkl. +4-Bluff anzweifeln, „Letzte Karte!“ rufen / „Erwischt!“
 - **Säure-Karten** (je 1 in Rot, Gelb, Grün, Blau; in der Lobby abschaltbar): Wer z. B. rote Säure legt,

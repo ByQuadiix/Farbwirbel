@@ -305,7 +305,7 @@ export class Board {
     if (dealt) { this.clearAll(); this.round = g.round; }
     // Zeitabstand zwischen Karten so wählen, dass die ganze Animation höchstens `total` Sekunden dauert
     const step = (count, maxStep, total) => Math.min(maxStep, total / Math.max(1, count));
-    const dealCards = Math.max(view.hand.length, ...view.players.filter((p) => p.id !== view.me).map((p) => Math.min(p.count, MAX_FAN)));
+    const dealCards = Math.max(view.hand.length, ...view.players.filter((p) => p.id !== view.me).map((p) => Math.min(p.count, this.fanMax())));
     const dealStep = step(dealCards * (view.players.length || 1), 0.07, 1.4);
     this.layoutSeats();
     this.setPileCount(g.drawCount);
@@ -453,7 +453,7 @@ export class Board {
     // --- Gegner ---
     for (const p of others) {
       const seat = this.seats.get(p.id);
-      const want = Math.min(p.count, MAX_FAN);
+      const want = Math.min(p.count, this.fanMax());
       let k = 0;
       const grew = p.count > (seat.lastCount ?? 0);
       const oppStep = step(want - seat.meshes.length, 0.1, 0.7);
@@ -499,6 +499,7 @@ export class Board {
     const aSeat = this.seats.get(actor);
     this.marker.visible = view.phase === 'playing' && !!aSeat;
     if (aSeat) this.marker.position.set(aSeat.group.position.x, 0.012, aSeat.group.position.z);
+    this.markerSc = aSeat?.sc ?? 1;
 
     this.layoutHand();
   }
@@ -535,7 +536,7 @@ export class Board {
     let i = 0;
     const sorted = sortHand(view.hand);
     // Karten landen nacheinander, aber insgesamt in höchstens ~1 s
-    const landing = sorted.length + others.reduce((s, p) => s + Math.min(p.count, MAX_FAN), 0);
+    const landing = sorted.length + others.reduce((s, p) => s + Math.min(p.count, this.fanMax()), 0);
     const rel = Math.min(0.035, 1.0 / Math.max(1, landing));
     for (const c of sorted) {
       const m = take();
@@ -549,7 +550,7 @@ export class Board {
     this.handOrder = sorted.map((c) => c.id);
     for (const p of others) {
       const seat = this.seats.get(p.id);
-      const want = Math.min(p.count, MAX_FAN);
+      const want = Math.min(p.count, this.fanMax());
       for (let k = 0; k < want; k++) {
         const m = take();
         setCardFace(m, null);
@@ -803,8 +804,12 @@ export class Board {
     }
     const { rx, rz } = this.seatRadii();
     const k = others.length;
+    // Viele Gegner: größerer Bogen, kleinere Plätze (bis zu 19 Gegner bei 20 Spielern)
+    const ext = k > 6 ? Math.min(14, (k - 6) * 1.5) : 0;
+    const sc = k <= 6 ? 1 : Math.max(0.5, 7 / (k + 1));
+    const perSeat = (Math.PI * (rx + rz)) / 2 / Math.max(1, k); // Bogenlänge pro Platz (Welt)
     others.forEach((p, i) => {
-      const deg = k === 1 ? 270 : 180 + (i * 180) / (k - 1);
+      const deg = k === 1 ? 270 : 180 - ext + (i * (180 + 2 * ext)) / (k - 1);
       const th = THREE.MathUtils.degToRad(deg);
       const pos = new THREE.Vector3(Math.cos(th) * rx, 0, Math.sin(th) * rz);
       const side = k > 1 && (i === 0 || i === k - 1);
@@ -816,19 +821,28 @@ export class Board {
         this.seats.set(p.id, seat);
       }
       seat.side = side;
+      seat.sc = sc;
+      seat.fanW = Math.max(0.4, Math.min(side ? 3.0 : 3.8, (perSeat * 0.9) / sc - CARD_W));
       seat.group.position.copy(pos);
+      seat.group.scale.setScalar(sc);
       seat.group.lookAt(0, 0, side ? -0.6 : 0);
       seat.group.updateMatrixWorld(true);
       // Label hinter dem Kartenfächer (von der Tischmitte aus gesehen)
       const out = new THREE.Vector3(Math.cos(th), 0, Math.sin(th) * 0.8).normalize();
-      seat.anchor = pos.clone().add(out.multiplyScalar(side ? 2.3 : 2.2)).setY(0.4);
+      seat.anchor = pos.clone().add(out.multiplyScalar((side ? 2.3 : 2.2) * Math.max(sc, 0.7))).setY(0.4);
       this.layoutSeat(seat);
     });
   }
 
+  /** Wie viele Kartenrücken pro Gegner höchstens gezeigt werden (bei vielen Spielern weniger). */
+  fanMax() {
+    const k = (this.view?.players.length ?? 1) - 1;
+    return k > 8 ? 10 : k > 6 ? 14 : MAX_FAN;
+  }
+
   layoutSeat(seat) {
     const m = seat.meshes.length;
-    const maxW = seat.side ? 3.0 : 3.8;
+    const maxW = seat.fanW ?? (seat.side ? 3.0 : 3.8);
     const spacing = m > 1 ? Math.min(0.34, maxW / (m - 1)) : 0;
     seat.meshes.forEach((mesh, i) => {
       const x = (i - (m - 1) / 2) * spacing;
@@ -1117,7 +1131,7 @@ export class Board {
     const gs = 1 + this.pulse * 0.35 + Math.sin(t * 2) * 0.03;
     this.glow.scale.setScalar(gs);
     this.glowMat.opacity = 0.75 + this.pulse * 0.25;
-    this.marker.scale.setScalar(1 + Math.sin(t * 3) * 0.06);
+    this.marker.scale.setScalar((1 + Math.sin(t * 3) * 0.06) * (this.markerSc ?? 1));
     const pileGlow = this.canDraw ? 0.12 + Math.sin(t * 4) * 0.08 + (this.pileHover ? 0.15 : 0) : 0;
     this.pileTop.material.emissiveIntensity = pileGlow;
   }

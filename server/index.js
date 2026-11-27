@@ -4,8 +4,8 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
-import { Room, GameError, AVATARS } from './room.js';
-import { COLORS, CHAOS_KEYS, DOOM_KEYS } from '../shared/rules.js';
+import { Room, GameError } from './room.js';
+import { COLORS, CHAOS_KEYS, DOOM_KEYS, AVATARS } from '../shared/rules.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT) || 3000;

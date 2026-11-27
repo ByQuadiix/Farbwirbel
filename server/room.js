@@ -1,6 +1,6 @@
 import {
   buildDeck, shuffle, canPlay, isSameCard, cardPoints, isNumber, isWild,
-  COLORS, DEFAULT_SETTINGS, MAX_PLAYERS, CHAOS, CHAOS_KEYS, CHAOS_LEVELS, isChaos,
+  COLORS, DEFAULT_SETTINGS, PLAYER_LIMIT, PLAYER_MIN, AVATARS, deckSize, CHAOS, CHAOS_KEYS, CHAOS_LEVELS, isChaos,
   DOOM, DOOM_KEYS, DOOM_LEVELS, isDoom,
 } from '../shared/rules.js';
 
@@ -8,8 +8,9 @@ const isSpecial = (c) => isChaos(c) || isDoom(c);
 export const HELL_ID_START = 2_000_000;
 import { botDecide, botCallChance, botCatchChance, botDelay } from './bot.js';
 
-export const AVATARS = ['🦊', '🐻', '🐼', '🐧', '🐸', '🦉', '🐱', '🐶', '🦁', '🐨', '🐙', '🦄', '🐯', '🐰', '🤖', '👾'];
-const BOT_NAMES = ['Kiki', 'Bruno', 'Lotte', 'Pixel', 'Fiete', 'Mira', 'Ozzy', 'Nala', 'Toni', 'Wanda', 'Rocco', 'Zora'];
+export { AVATARS };
+const BOT_NAMES = ['Kiki', 'Bruno', 'Lotte', 'Pixel', 'Fiete', 'Mira', 'Ozzy', 'Nala', 'Toni', 'Wanda', 'Rocco', 'Zora',
+  'Paule', 'Greta', 'Juno', 'Kalle', 'Romy', 'Fritzi', 'Bodo', 'Ilse', 'Momo', 'Hugo', 'Tilda', 'Ede'];
 
 let nextPlayerId = 1;
 
@@ -65,7 +66,7 @@ export class Room {
 
   addHuman(session) {
     if (this.phase !== 'lobby') fail('Das Spiel läuft bereits.');
-    if (this.players.length >= MAX_PLAYERS) fail('Der Raum ist voll.');
+    if (this.players.length >= this.settings.maxPlayers) fail(`Der Raum ist voll (${this.settings.maxPlayers} Plätze).`);
     const p = this.newPlayer({ name: session.name, avatar: session.avatar, isBot: false });
     p.session = session;
     this.players.push(p);
@@ -75,9 +76,10 @@ export class Room {
   }
 
   addBot() {
-    if (this.players.length >= MAX_PLAYERS) fail('Der Raum ist voll.');
+    if (this.players.length >= this.settings.maxPlayers) fail(`Der Raum ist voll (${this.settings.maxPlayers} Plätze).`);
     const used = new Set(this.players.map((p) => p.name));
-    const name = BOT_NAMES.filter((n) => !used.has(n))[Math.floor(Math.random() * 6)] ?? `Bot ${this.players.length + 1}`;
+    const free = BOT_NAMES.filter((n) => !used.has(n));
+    const name = free[Math.floor(Math.random() * free.length)] ?? `Bot ${this.players.length + 1}`;
     const usedAv = new Set(this.players.map((p) => p.avatar));
     const avs = AVATARS.filter((a) => !usedAv.has(a));
     const avatar = avs[Math.floor(Math.random() * avs.length)] ?? '🤖';
@@ -135,11 +137,22 @@ export class Room {
       switch (msg.t) {
         case 'settings':
           if (!isHost || this.phase !== 'lobby') fail('Nur der Host kann das ändern.');
+          if (Number.isInteger(msg.settings?.maxPlayers) && msg.settings.maxPlayers < this.players.length) {
+            fail(`Es sind schon ${this.players.length} Spieler im Raum – erst Bots entfernen.`);
+          }
           this.settings = sanitizeSettings(this.settings, msg.settings ?? {});
           return this.afterAction(false);
         case 'addBot':
           if (!isHost || this.phase !== 'lobby') fail('Nur der Host kann Bots hinzufügen.');
           this.addBot();
+          return this.afterAction(false);
+        case 'fillBots':
+          if (!isHost || this.phase !== 'lobby') fail('Nur der Host kann Bots hinzufügen.');
+          while (this.players.length < this.settings.maxPlayers) this.addBot();
+          return this.afterAction(false);
+        case 'clearBots':
+          if (!isHost || this.phase !== 'lobby') fail('Nur der Host kann Bots entfernen.');
+          this.players = this.players.filter((q) => !q.isBot);
           return this.afterAction(false);
         case 'removeBot': {
           if (!isHost || this.phase !== 'lobby') fail('Nur der Host kann Bots entfernen.');
@@ -213,7 +226,11 @@ export class Room {
   startRound() {
     this.clearTimers();
     const n = this.players.length;
-    const draw = shuffle(buildDeck(1, { acid: this.settings.acid }));
+    // Genug Decks für alle Startkarten + Reserve (bei 20 Spielern reicht ein Deck nicht)
+    const decks = Math.max(1, Math.ceil((this.players.length * this.settings.handSize + 40) / deckSize(this.settings)));
+    const draw = [];
+    for (let k = 0; k < decks; k++) draw.push(...buildDeck(k * 1000 + 1, { acid: this.settings.acid }));
+    shuffle(draw);
     for (const p of this.players) {
       p.hand = [];
       for (let i = 0; i < this.settings.handSize; i++) p.hand.push(this.maybeChaos() ?? draw.pop());
@@ -227,7 +244,7 @@ export class Room {
     this.round += 1;
     const turn = this.round === 1 ? Math.floor(Math.random() * n) : (this.startSeat + 1) % n;
     this.startSeat = turn;
-    this.game = { draw, discard: [first], color: first.color, turn, dir: 1, pending: 0, awaiting: null, deadline: 0, decks: 1, actions: 0, dirChaos: 0 };
+    this.game = { draw, discard: [first], color: first.color, turn, dir: 1, pending: 0, awaiting: null, deadline: 0, decks, maxDecks: decks + 5, actions: 0, dirChaos: 0 };
     this.prevTurnId = null;
     this.phase = 'playing';
     this.result = null;
@@ -626,7 +643,7 @@ export class Room {
     const g = this.game;
     if (g.discard.length < 2) {
       // Alles ist auf den Händen: ein frisches Deck kommt ins Spiel
-      if (g.decks >= 6) return;
+      if (g.decks >= g.maxDecks) return;
       g.draw = shuffle(buildDeck(g.decks * 1000 + 1, { acid: this.settings.acid }));
       g.decks += 1;
       this.ev({ type: 'newDeck' });
@@ -677,7 +694,7 @@ export class Room {
       this.actionNo++;
       if (this.phase === 'playing') {
         // Notbremse gegen endlose Runden: wer die wenigsten Karten hat, gewinnt
-        if (++this.game.actions > 2000) {
+        if (++this.game.actions > Math.max(2000, this.players.length * 150)) {
           const best = this.players.reduce((m, q) => (q.hand.length < m.hand.length ? q : m));
           this.ev({ type: 'timeLimit' });
           return this.endRound(best, { timeLimit: true });
@@ -712,7 +729,9 @@ export class Room {
 
     const anyVulnerable = this.players.some((q) => q.vulnerable);
     if (a.isBot) {
-      this.timer(() => this.botAct(a), botDelay(this.settings.botLevel) + (anyVulnerable ? 700 : 0));
+      // Viele Spieler: Bots ziehen schneller, damit eine Runde nicht ewig dauert
+      const tempo = Math.max(0.35, Math.min(1, 6 / this.players.length));
+      this.timer(() => this.botAct(a), botDelay(this.settings.botLevel) * tempo + (anyVulnerable ? 700 : 0));
     } else if (!a.session?.ws) {
       this.timer(() => this.autoAct(a, true), 2500);
     }
@@ -835,6 +854,7 @@ export class Room {
 function sanitizeSettings(cur, s) {
   const out = { ...cur };
   if (['neon', 'winter', 'garden'].includes(s.theme)) out.theme = s.theme;
+  if (Number.isInteger(s.maxPlayers) && s.maxPlayers >= PLAYER_MIN && s.maxPlayers <= PLAYER_LIMIT) out.maxPlayers = s.maxPlayers;
   if (Number.isInteger(s.handSize) && s.handSize >= 3 && s.handSize <= 10) out.handSize = s.handSize;
   for (const k of ['stacking', 'zeroPass', 'jumpIn', 'drawToMatch', 'acid']) if (typeof s[k] === 'boolean') out[k] = s[k];
   if ([0, 200, 300, 500].includes(s.scoreLimit)) out.scoreLimit = s.scoreLimit;

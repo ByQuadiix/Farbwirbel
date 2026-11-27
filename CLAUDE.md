@@ -134,10 +134,10 @@ Zeilenenden sind per `.gitattributes` überall LF (Linux-Container). Das fertige
 | `hello` | `token?, name?, avatar?` | Session anlegen/wiederaufnehmen → `welcome`, ggf. `noroom` |
 | `profile` | `name, avatar` | Name/Avatar ändern (in der Lobby auch im Raum) |
 | `create` / `quick` | `quick: bots, theme, chaos` | Raum erstellen / sofort Spiel gegen Bots |
-| `join` | `code` | Raum beitreten (nur in der Lobby, max. 6) |
+| `join` | `code` | Raum beitreten (nur in der Lobby, max. `settings.maxPlayers`) |
 | `leave` | – | Raum verlassen |
 | `settings` | `settings:{…}` | nur Host, nur Lobby (siehe `sanitizeSettings` in room.js) |
-| `addBot` / `removeBot` | `id` | nur Host, Lobby |
+| `addBot` / `removeBot` / `fillBots` / `clearBots` | `id` (removeBot) | nur Host, Lobby; fillBots füllt bis `maxPlayers` |
 | `start` / `nextRound` / `toLobby` | – | nur Host |
 | `play` | `cardId, color?, target?, dirChoice?` | Karte spielen (Farbe bei Joker, Ziel bei 7/Chaos/DOOM, `cancel`/`extend` bei Richtungschaos) |
 | `draw` / `pass` | – | ziehen / gezogene Karte behalten |
@@ -169,7 +169,7 @@ emote, join, leave, disconnect, reconnect, debug`.
 **ID-Bereiche** (wichtig für Tests/Invarianten): Grunddeck ab 1 · Zusatzdecks `decks*1000+1` · Chaos/DOOM ab
 `1_000_000` · Höllenkarten (aus DOOM-Effekten) ab `2_000_000` (`HELL_ID_START`) · Debug-Karten ab `5_000_000`.
 
-**Deck:** 108 Standardkarten + 4 Säure (wenn `settings.acid`) → `deckSize()`. Erste Ablagekarte ist immer eine Zahl.
+**Deck:** 108 Standardkarten + 4 Säure (wenn `settings.acid`) → `deckSize()`. Beim Rundenstart werden so viele Decks gemischt, dass alle Startkarten + 40 Reserve reichen (`decks = ceil((Spieler·Startkarten+40)/deckSize)`, Deck k hat IDs ab `k*1000+1`); später dürfen bis zu 5 weitere Decks dazukommen (`game.maxDecks`). Erste Ablagekarte ist immer eine Zahl.
 
 **Grundregeln:** gleiche Farbe oder gleiche Art. Aussetzen, Richtungswechsel (bei 2 Spielern = Aussetzen), +2,
 Joker, +4 mit **Bluff-Regel** (beim Legen wird `guilty = hat Karte der vorherigen Farbe` gespeichert; Anzweifeln:
@@ -182,7 +182,7 @@ Erwischt = +2. Gezogene passende Karte darf sofort gespielt werden (`awaiting {t
 
 **Punkte:** Zahl = Wert · Aktion/Säure = 20 · Joker/Chaos = 50 · DOOM = 100. Punkteziel 0/200/300/500.
 
-**Einstellungen** (`DEFAULT_SETTINGS`): `theme (neon|winter|garden), handSize, stacking, zeroPass, jumpIn, drawToMatch,
+**Einstellungen** (`DEFAULT_SETTINGS`): `theme (neon|winter|garden), maxPlayers (2–20, Standard 6; PLAYER_MIN/PLAYER_LIMIT), handSize, stacking, zeroPass, jumpIn, drawToMatch,
 scoreLimit, turnTime (0/15/30/60), botLevel (easy|normal|hard), chaos (0/5/10/20/35 %), acid (bool), doom (0/1/3 %)`.
 Validierung in `sanitizeSettings()` (room.js) – neue Einstellungen dort UND in `DEFAULT_SETTINGS` UND in der Lobby (main.js `renderLobby`) eintragen.
 
@@ -214,8 +214,8 @@ erzeugt** (`room.hellCards(n)`, IDs ab 2 000 000) und kommen visuell aus dem **H
 | `hallu` | alle anderen: `player.hallu = 3` (zählt eigene Züge runter in `tickHallu()`); rein clientseitige Darstellung |
 
 ### Sicherheitsnetze
-- Ziehstapel leer und nichts zum Mischen → **frisches Deck** (`newDeck`, max. 6 Decks).
-- Nach **2000 Zügen** endet eine Runde, wenigste Karten gewinnt (`result.timeLimit`).
+- Ziehstapel leer und nichts zum Mischen → **frisches Deck** (`newDeck`, bis zu 5 zusätzliche Decks).
+- Nach **max(2000, Spieler·150) Zügen** endet eine Runde, wenigste Karten gewinnt (`result.timeLimit`).
 
 ---
 
@@ -278,7 +278,7 @@ ziehen, z. B. Handtausch nur, wenn man mehr Karten hat). Bluff-Anzweifeln abhän
 ---
 
 ## 9. Tests
-`npm test` → `scripts/simulate.js`: viele Varianten (Hausregeln, Chaos 10–35 %, DOOM bis 15 %) × 2/3/4/6 Spieler × 40 Runden.
+`npm test` → `scripts/simulate.js`: viele Varianten (Hausregeln, Chaos 10–35 %, DOOM bis 15 %) × 2/3/4/6 Spieler × 40 Runden + 10/20 Spieler × 8 Runden.
 Prüft nach **jedem** Zug: normale Kartenanzahl = `deckSize * decks` (ohne Chaos/DOOM/Höllenkarten), keine doppelten
 IDs, keine Sonderkarten im Stapel, `dirChaos ≥ 0`; am Ende gültiger Gewinner (leere Hand oder Zuglimit).
 Prüft außerdem, dass **alle** Chaos- und DOOM-Effekte, Säure und Richtungschaos-Würfe vorkamen.
@@ -338,9 +338,10 @@ Karten in `validDebugCard()` (index.js). Lokal: `$env:FW_DEBUG='1'; npm start`. 
 11. Kartenauswahl bei großen Händen überarbeitet (Lupe, spielbare Karten vorne, Auswahl nach Position, Tastatur/Mausrad/Touch).
 12. Kartenanimationen beschleunigt (feste Gesamtdauer, Neuladen ohne Austeil-Animation).
 13. Hausregel 7 (Hand tauschen) **entfernt** auf Wunsch des Nutzers; 0 (Hände weiterreichen) bleibt als `zeroPass`.
+14. Spielerlimit einstellbar (Lobby-Stepper 2–20, Standard 6): mehrere Decks, 24 Bot-Namen, 28 Avatare (`AVATARS` in shared/rules.js), Bots schneller bei vielen Spielern, kompakte Sitzplätze.
 
 ## 14. Mögliche nächste Schritte (nicht beauftragt)
-- Hochformat/Handy weiter optimieren (Sitzplätze eng bei 5–6 Spielern).
+- Hochformat/Handy weiter optimieren (Sitzplätze eng bei vielen Spielern).
 - Ablagestapel liegt optisch über dem Höllenportal – könnte während des Portals ausgeblendet/angehoben werden.
 - Persistenz (Räume überleben keinen Neustart), Zuschauer-Modus, Chat.
 - Balance: Säure ist stark (Ø ~4 Karten pro Säure in der Simulation).

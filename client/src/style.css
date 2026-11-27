@@ -126,7 +126,14 @@ input:focus-visible, select:focus-visible { border-color: var(--gold); }
 .slot .av { font-size: 1.7rem; width: 38px; text-align: center; }
 .slot .nm { font-weight: 600; font-size: 1.05rem; }
 .slot.empty { background: transparent; border: 2px dashed var(--line); justify-content: center; color: var(--muted); }
-.slot.empty .btn { width: 100%; }
+.slot.empty { flex-wrap: wrap; gap: 8px; }
+.slot.empty span { flex: 1; }
+.clear-bots { margin-top: 8px; }
+.slots { max-height: 52vh; overflow-y: auto; padding-right: 4px; }
+.stepper { display: inline-flex; align-items: center; background: #120b26; border-radius: 12px; padding: 3px; gap: 4px; }
+.stepper b { min-width: 2.2em; text-align: center; font-size: 1.1rem; }
+.stepper button { border: 0; width: 34px; height: 32px; border-radius: 9px; background: var(--secondary); color: #fff; font-size: 1.2rem; font-weight: 700; cursor: pointer; }
+.stepper button:disabled { background: transparent; color: var(--muted); opacity: 0.5; cursor: default; }
 .badge { font-size: 0.72rem; font-weight: 600; border-radius: 99px; padding: 2px 8px; background: rgba(255, 255, 255, 0.12); }
 .badge.host { background: var(--gold); color: #3a2600; }
 .badge.you { background: var(--secondary); }
@@ -356,6 +363,18 @@ body.shake #stage { animation: stageshake 0.09s linear 9; }
 .toast.out { opacity: 0; transform: translateX(20px); }
 @keyframes slidein { from { opacity: 0; transform: translateX(20px); } }
 .conn { position: absolute; bottom: 50%; left: 50%; transform: translateX(-50%); background: var(--danger); padding: 10px 18px; border-radius: 99px; font-weight: 600; }
+
+/* Viele Gegner (bis 19): kompaktere Namensschilder */
+body.seats-many .seat .av { width: 42px; height: 42px; font-size: 1.5rem; border-width: 2px; }
+body.seats-many .seat .count { min-width: 26px; height: 30px; font-size: 0.9rem; }
+body.seats-many .seat .name { font-size: 0.78rem; padding: 1px 7px; max-width: 110px; overflow: hidden; text-overflow: ellipsis; }
+body.seats-many .seat .sub { display: none; }
+body.seats-many .seat .flag { font-size: 0.65rem; padding: 1px 6px; }
+body.seats-crowded .seat { gap: 1px; }
+body.seats-crowded .seat .av { width: 32px; height: 32px; font-size: 1.15rem; border-radius: 8px; }
+body.seats-crowded .seat .count { min-width: 22px; height: 24px; font-size: 0.78rem; box-shadow: 2px 2px 0 #1a1433; }
+body.seats-crowded .seat .name { font-size: 0.68rem; max-width: 80px; box-shadow: 0 2px 0 #1d5bb0; }
+body.seats-crowded .seat .name i { display: none; }
 
 /* Große Hand mit zweiter Reihe: Overlays über die Karten schieben */
 body.hand-tall .banner { bottom: 45%; }

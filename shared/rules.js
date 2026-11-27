@@ -5,10 +5,17 @@ export const COLORS = ['r', 'y', 'g', 'b'];
 export const COLOR_NAMES = { r: 'Rot', y: 'Gelb', g: 'Grün', b: 'Blau', w: 'Schwarz' };
 export const COLOR_HEX = { r: '#e8364a', y: '#ffc21a', g: '#1fb35a', b: '#1f7fe8', w: '#24203a' };
 
-export const MAX_PLAYERS = 6;
+/** Absolute Obergrenze für die Lobby-Einstellung `maxPlayers`. */
+export const PLAYER_LIMIT = 20;
+export const PLAYER_MIN = 2;
+
+/** Avatare (Server prüft dagegen, Client zeigt sie zur Auswahl). Mindestens PLAYER_LIMIT Stück. */
+export const AVATARS = ['🦊', '🐻', '🐼', '🐧', '🐸', '🦉', '🐱', '🐶', '🦁', '🐨', '🐙', '🦄', '🐯', '🐰', '🤖', '👾',
+  '🐵', '🐔', '🦋', '🐢', '🦀', '🐳', '🦒', '🐷', '🐮', '🦔', '🐝', '🦜'];
 
 export const DEFAULT_SETTINGS = {
   theme: 'neon',        // neon | winter | garden
+  maxPlayers: 6,        // Plätze im Raum (PLAYER_MIN … PLAYER_LIMIT)
   handSize: 7,
   stacking: false,      // +2 auf +2, +4 auf +2/+4
   zeroPass: false,      // 0 = alle Hände wandern einen Platz in Spielrichtung weiter
