@@ -42,7 +42,7 @@ npm install                 # einmalig (ws, three, vite, @fontsource/fredoka)
 npm run build               # Client nach dist/public bauen (Vite, ~2 s)
 npm start                   # Server auf http://localhost:3000
 $env:FW_DEBUG='1'; npm start   # dito mit Debug-Menü (🛠-Button im Spiel)
-npm test                    # Regel-Simulation: ~1760 Bot-Runden mit allen Varianten
+npm test                    # Regel-Simulation: ~2500 Bot-Runden mit allen Varianten
 ```
 
 - **Live-Entwicklung:** `npm run dev` (Server mit --watch) + parallel `npm run dev:client` (Vite auf :5173, proxyt `/ws` → :3000).
@@ -307,7 +307,11 @@ halb Theme-Ereignis (`THEME_EVENTS[theme]`).
 - `particles.js`: `Particles` = Ringpuffer + ShaderMaterial (Größe/Alpha pro Partikel). `ChaosFX` hat 3 Systeme
   (smoke normal, glow additiv, sparks additiv) und Paletten `PAL.chaos` (lila) / `PAL.doom` (rot/Glut).
 - `audio.js`: `sfx(name)` – card, draw, turn, error, skip, reverse, plus, wild, call, caught, shuffle, win, lose, click,
-  pop, chaos, shimmer, acid, tornado, doomDraw, doomPlay, dice. Stumm-Schalter in localStorage.
+  pop, chaos, shimmer, acid, tornado, doomDraw, doomPlay, dice, tick, tickFast, boom, mirror, steal, freeze, xray,
+  meteor, wheel, blackout, rain. Stumm-Schalter in localStorage.
+- `board.js` (neu für Paket 15): `handleFx()` (Effekte zu Events), `seatPos(id)`, Bombe (`buildBomb/updateBomb`),
+  Meteore (`spawnMeteor/updateMeteors`), Farb-Tints `TINTS` (frost/curse/wet, `tintFor`), `setBlackout()`, Regen
+  (`rainUntil` → `fx.rain`), Diebstahl-Flugbahn (`stealTo/stealFrom`). Partikel-Paletten zusätzlich `mirror`, `frost`.
 
 ---
 
@@ -320,10 +324,12 @@ ziehen, z. B. Handtausch nur, wenn man mehr Karten hat). Bluff-Anzweifeln abhän
 ---
 
 ## 9. Tests
-`npm test` → `scripts/simulate.js`: viele Varianten (Hausregeln, Chaos 10–35 %, DOOM bis 15 %) × 2/3/4/6 Spieler × 40 Runden + 10/20 Spieler × 8 Runden.
+`npm test` → `scripts/simulate.js`: viele Varianten (Hausregeln, Chaos 10–35 %, DOOM bis 15 %, Ereignisse in allen
+Themes, Lotterie an/aus) × 2/3/4/6 Spieler × 40 Runden + 10/20 Spieler × 8 Runden (~2500 Runden, ~430 000 Züge).
 Prüft nach **jedem** Zug: normale Kartenanzahl = `deckSize * decks` (ohne Chaos/DOOM/Höllenkarten), keine doppelten
-IDs, keine Sonderkarten im Stapel, `dirChaos ≥ 0`; am Ende gültiger Gewinner (leere Hand oder Zuglimit).
-Prüft außerdem, dass **alle** Chaos- und DOOM-Effekte, Säure und Richtungschaos-Würfe vorkamen.
+IDs, keine Sonderkarten im Stapel, `dirChaos ≥ 0`, gültiges Spiegel-`awaiting`; am Ende gültiger Gewinner (leere Hand oder Zuglimit).
+Prüft außerdem, dass **alle** Chaos- und DOOM-Effekte, Säure, Richtungschaos-Würfe, Lotterie, alle Glücksrad-Ergebnisse
+und Theme-Ereignisse (Bombe, Spiegel, Diebstahl, Auftauen, Fluch-/Pakt-Ende …) vorkamen.
 Der Docker-Build führt `npm test` aus – schlägt er fehl, wird kein Image gebaut.
 
 **Neue Effekte immer:** in `shared/rules.js` definieren → `room.js` umsetzen → `bot.js` bewerten → `simulate.js`
@@ -333,7 +339,8 @@ Der Docker-Build führt `npm test` aus – schlägt er fehl, wird kein Image geb
 
 ## 10. Debug-Modus
 `FW_DEBUG=1` (Umgebungsvariable) → `welcome.debug = true` → 🛠-Button im Spiel. Server-Befehl `debugGive` validiert
-Karten in `validDebugCard()` (index.js). Lokal: `$env:FW_DEBUG='1'; npm start`. In `docker-compose.yml` vorbereitet
+Karten in `validDebugCard()` (index.js); `debugEvent` löst Glücksrad/Glatteis/Stromausfall/Regen sofort aus
+(unabhängig vom Theme). Aus der Browser-Konsole geht beides auch per `__fw.send({...})`. Lokal: `$env:FW_DEBUG='1'; npm start`. In `docker-compose.yml` vorbereitet
 (auskommentiert). Ohne Variable wird `debugGive` ignoriert.
 
 ---
@@ -381,6 +388,10 @@ Karten in `validDebugCard()` (index.js). Lokal: `$env:FW_DEBUG='1'; npm start`. 
 12. Kartenanimationen beschleunigt (feste Gesamtdauer, Neuladen ohne Austeil-Animation).
 13. Hausregel 7 (Hand tauschen) **entfernt** auf Wunsch des Nutzers; 0 (Hände weiterreichen) bleibt als `zeroPass`.
 14. Spielerlimit einstellbar (Lobby-Stepper 2–20, Standard 6): mehrere Decks, 24 Bot-Namen, 28 Avatare (`AVATARS` in shared/rules.js), Bots schneller bei vielen Spielern, kompakte Sitzplätze.
+15. Großes Erweiterungspaket (Nutzer wählte aus Vorschlägen; **nicht** gewünscht: Seelentausch-DOOM, Lotterie als Chaos-Karte):
+    Chaos Zeitbombe/Spiegel/Dieb/Röntgenblick/Eiszeit · Lotterie als farbige Aktionskarte · DOOM Dämonenpakt/
+    Meteoritenhagel/Fluch · Tisch-Ereignisse Glücksrad + Glatteis/Stromausfall/Regen (Lobby: Aus/Selten/Oft).
+    Dafür Angriffs-Warteschlange (Spiegel-Konter) und `restrict` in `canPlay` eingeführt.
 
 ## 14. Mögliche nächste Schritte (nicht beauftragt)
 - Hochformat/Handy weiter optimieren (Sitzplätze eng bei vielen Spielern).
