@@ -1,0 +1,22 @@
+{
+  "name": "farbwirbel",
+  "version": "1.0.0",
+  "description": "Farbwirbel – 3D-Kartenspiel im Browser mit Multiplayer und Bots",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch server/index.js",
+    "dev:client": "vite",
+    "build": "vite build",
+    "start": "node server/index.js",
+    "test": "node scripts/simulate.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@fontsource/fredoka": "^5.1.0",
+    "three": "^0.170.0",
+    "vite": "^6.0.0"
+  }
+}

@@ -1,0 +1,7 @@
+node_modules/
+dist/
+*.log
+*.tar
+*.tar.gz
+*.zip
+.claude/settings.local.json

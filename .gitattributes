@@ -1,0 +1,6 @@
+# Einheitlich LF – das Projekt läuft in Linux-Containern (Docker/Unraid)
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.woff binary
+*.woff2 binary

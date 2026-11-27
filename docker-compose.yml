@@ -1,0 +1,11 @@
+services:
+  farbwirbel:
+    build: .
+    image: farbwirbel:latest
+    container_name: farbwirbel
+    restart: unless-stopped
+    ports:
+      - "8080:3000"   # links: Port auf dem Unraid-Server, rechts: Port im Container
+    environment:
+      - TZ=Europe/Berlin
+      # - FW_DEBUG=1   # Debug-Menü (Karten verteilen) einschalten – nur zum Testen!
