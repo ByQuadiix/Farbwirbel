@@ -31,7 +31,14 @@ Ein einziger Docker-Container: Node.js liefert die Webseite aus und betreibt den
 
 ## Auf Unraid installieren
 
-### 1. Dateien auf den Server kopieren
+### 1. Dateien auf den Server holen
+Am einfachsten per Git direkt im Unraid-Terminal:
+
+```bash
+cd /mnt/user/appdata && git clone https://github.com/ByQuadiix/Farbwirbel.git farbwirbel
+```
+
+Oder manuell kopieren:
 Kopiere den Ordner `farbwirbel` (ohne `node_modules` und `dist`) auf eine Freigabe, z. B. nach
 `\\TOWER\appdata\farbwirbel` → auf dem Server ist das `/mnt/user/appdata/farbwirbel`.
 

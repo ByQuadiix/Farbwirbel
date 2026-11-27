@@ -24,6 +24,19 @@ und betreibt den Spielserver per WebSocket auf demselben Port.
 
 ## 2. Schnellstart
 
+**Repository:** https://github.com/ByQuadiix/Farbwirbel (Branch `main`)
+
+```powershell
+git clone https://github.com/ByQuadiix/Farbwirbel.git
+cd Farbwirbel
+```
+
+Git-Autor für dieses Projekt (nur lokal im Repo gesetzt, nicht global):
+`git config user.name "ByQuadiix"` und `git config user.email "ByQuadiix@users.noreply.github.com"`
+(noreply-Adresse, damit die private E-Mail nicht in der öffentlichen Historie landet). Commits enden mit
+`Co-Authored-By`-Zeile, wenn Claude sie erstellt. Der erste Push brauchte eine einmalige Browser-Anmeldung über den
+Git Credential Manager – die macht der Nutzer selbst.
+
 ```powershell
 npm install                 # einmalig (ws, three, vite, @fontsource/fredoka)
 npm run build               # Client nach dist/public bauen (Vite, ~2 s)
@@ -76,8 +89,9 @@ farbwirbel/
    └─ simulate.js          ← Regeltest: viele Bot-Partien, prüft Invarianten (Kartenanzahl, keine Duplikate, Gewinner …)
 ```
 
-Nicht im Repo/ZIP (wird erzeugt): `node_modules/`, `dist/`. Außerhalb des Projektordners lagen bisher
-`farbwirbel-unraid.zip` (Quellcode) und `farbwirbel-image.tar.gz` (fertiges Docker-Image) – beides reproduzierbar.
+Nicht im Repo (wird erzeugt, siehe `.gitignore`): `node_modules/`, `dist/`, `*.zip`, `*.tar.gz`.
+Zeilenenden sind per `.gitattributes` überall LF (Linux-Container). Das fertige Docker-Image
+(`farbwirbel-image.tar.gz`) und Übertragungs-ZIPs sind bewusst nicht im Repo – bei Bedarf neu erzeugen (siehe Abschnitt 11).
 
 ---
 
@@ -311,6 +325,7 @@ Karten in `validDebugCard()` (index.js). Lokal: `$env:FW_DEBUG='1'; npm start`. 
    +100 mit Zielwahl; DOOM als eigener Regler, Standard 1 %). Dazu Chaos-Karte Richtungschaos.
 8. Früchte fliegen bei Halluzination mit in den Tornado.
 9. Docker-Container lokal gebaut und getestet, Image als `.tar.gz` exportiert.
+10. Projektübergabe: CLAUDE.md, Git-Repo auf GitHub (zuerst „3D-Uno“, vom Nutzer umbenannt in „Farbwirbel“).
 
 ## 14. Mögliche nächste Schritte (nicht beauftragt)
 - Hochformat/Handy weiter optimieren (Sitzplätze eng bei 5–6 Spielern).
